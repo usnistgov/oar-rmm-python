@@ -1,0 +1,113 @@
+{
+  "_id": {
+    "timestamp": 1661857431,
+    "date": "2022-08-30T11:03:51.000+00:00"
+  },
+  "@context": [
+    "https://data.nist.gov/od/dm/nerdm-pub-context.jsonld",
+    {
+      "@base": "ark:/88434/mds0052gnp"
+    }
+  ],
+  "_schema": "https://data.nist.gov/od/dm/nerdm-schema/v0.7#",
+  "_extensionSchemas": [
+    "https://data.nist.gov/od/dm/nerdm-schema/pub/v0.7#/definitions/PublicDataResource"
+  ],
+  "@type": ["nrdp:PublicDataResource", "dcat:Dataset"],
+  "@id": "ark:/88434/mds0052gnp",
+  "title": "NIST Campus Photovoltaic (PV) Arrays and Weather Station Data Sets",
+  "contactPoint": {
+    "hasEmail": "mailto:matthew.boyd@nist.gov",
+    "fn": "Matthew Boyd"
+  },
+  "modified": "2016-12-31",
+  "status": "available",
+  "ediid": "5B31E13F11AB10B6E0531A5706816D0B1867",
+  "landingPage": "https://pvdata.nist.gov",
+  "description": [
+    "One-minute averaged values for 2015 and 2016 for three grid-connected photovoltaic arrays on the NIST campus in Gaithersburg Maryland USA.  The arrays are built from monocrystalline silicon modules and range from 73 kW to 217 kW. Each array has a different tilt, orientation, and configuration. Irradiance, temperature, wind, and electrical measurements are recorded at each array. One-minute average data from a nearby weather station and images of the sky and arrays at one-hour intervals are also included. Higher frequency one-second data and images at five-minute intervals are available upon request."
+  ],
+  "keyword": ["photovoltaic", "PV", "weather", "solar", "array", "meteorology"],
+  "theme": [
+    "Metrology: Environmental metrology",
+    "Energy: Alternative energy",
+    "Energy: Electric power / smart grid"
+  ],
+  "topic": [
+    {
+      "@type": "Concept",
+      "scheme": "https://data.nist.gov/od/dm/nist-themes/v1.1",
+      "tag": "Metrology: Environmental metrology"
+    },
+    {
+      "@type": "Concept",
+      "scheme": "https://data.nist.gov/od/dm/nist-themes/v1.1",
+      "tag": "Energy: Alternative energy"
+    },
+    {
+      "@type": "Concept",
+      "scheme": "https://data.nist.gov/od/dm/nist-themes/v1.1",
+      "tag": "Energy: Electric power / smart grid"
+    }
+  ],
+  "references": [
+    {
+      "@type": ["deo:BibliographicReference"],
+      "@id": "#ref:10.6028/NIST.TN.1913",
+      "refType": "IsSupplementTo",
+      "location": "https://dx.doi.org/10.6028/NIST.TN.1913",
+      "_extensionSchemas": [
+        "https://data.nist.gov/od/dm/nerdm-schema/bib/v0.7#/definitions/DCiteReference"
+      ]
+    },
+    {
+      "@type": ["deo:BibliographicReference"],
+      "@id": "#ref:10.6028/NIST.TN.1896",
+      "refType": "IsSupplementTo",
+      "location": "https://dx.doi.org/10.6028/NIST.TN.1896",
+      "_extensionSchemas": [
+        "https://data.nist.gov/od/dm/nerdm-schema/bib/v0.7#/definitions/DCiteReference"
+      ]
+    }
+  ],
+  "accessLevel": "public",
+  "license": "https://www.nist.gov/open/license",
+  "inventory": [
+    {
+      "forCollection": "",
+      "childCount": 1,
+      "descCount": 1,
+      "byType": [
+        {
+          "forType": "dcat:Distribution",
+          "childCount": 1,
+          "descCount": 1
+        },
+        {
+          "forType": "nrdp:AccessPage",
+          "childCount": 1,
+          "descCount": 1
+        }
+      ],
+      "childCollections": []
+    }
+  ],
+  "components": [
+    {
+      "accessURL": "https://doi.org/10.18434/M3S67G",
+      "@type": ["nrdp:AccessPage", "dcat:Distribution"],
+      "@id": "#10.18434/M3S67G",
+      "_extensionSchemas": [
+        "https://data.nist.gov/od/dm/nerdm-schema/pub/v0.7#/definitions/AccessPage"
+      ]
+    }
+  ],
+  "publisher": {
+    "@type": "org:Organization",
+    "name": "National Institute of Standards and Technology"
+  },
+  "language": ["en"],
+  "bureauCode": ["006:55"],
+  "programCode": ["006:045"],
+  "version": "1.0.0"
+}
