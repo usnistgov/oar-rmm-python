@@ -6,7 +6,7 @@ from app.schemas.response import SearchResult
 
 router = APIRouter()
 
-@router.get("/records/", response_model=List[Record])
+@router.get("/records/", response_model=SearchResult)
 def read_records(skip: int = 0, limit: int = 10):
     records = crud.get_records(skip=skip, limit=limit)
     return records
