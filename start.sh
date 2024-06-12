@@ -1,2 +1,2 @@
 #!/bin/bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --log-level debug

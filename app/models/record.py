@@ -1,51 +1,27 @@
-from pydantic import BaseModel, Field, create_model
-from typing import List, Optional, Dict, Any, Type, Tuple
-from copy import deepcopy
-from pydantic.fields import FieldInfo
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
 
-
-def partial_model(model: Type[BaseModel]):
-    def make_field_optional(field: FieldInfo, default: Any = None) -> Tuple[Any, FieldInfo]:
-        new = deepcopy(field)
-        new.default = default
-        new.annotation = Optional[field.annotation]  # type: ignore
-        return new.annotation, new
-    return create_model(
-        f'Partial{model.__name__}',
-        __base__=model,
-        __module__=model.__module__,
-        **{
-            field_name: make_field_optional(field_info)
-            for field_name, field_info in model.__fields__.items()
-        }
-    )
-
-@partial_model
 class ContactPoint(BaseModel):
-    hasEmail: str
-    fn: str
+    hasEmail: Optional[str] = None
+    fn: Optional[str] = None
 
-@partial_model
 class Inventory(BaseModel):
-    forCollection: str
-    childCount: int
-    descCount: int
-    byType: List[Dict[str, Any]]
-    childCollections: List[Any]
+    forCollection: Optional[str] = None
+    childCount: Optional[int] = None
+    descCount: Optional[int] = None
+    byType: Optional[List[Dict[str, Any]]] = None
+    childCollections: Optional[List[Any]] = None
 
-@partial_model
 class Components(BaseModel):
-    accessURL: str
-    type: List[str] = Field(..., alias='@type')
-    id: str = Field(..., alias='@id')
-    extensionSchemas: List[str] = Field(..., alias='_extensionSchemas')
+    accessURL: Optional[str] = None
+    type: Optional[List[str]] = Field(None, alias='@type')
+    id: Optional[str] = Field(None, alias='@id')
+    extensionSchemas: Optional[List[str]] = Field(None, alias='_extensionSchemas')
 
-@partial_model
 class Publisher(BaseModel):
-    type: str = Field(..., alias='@type')
-    name: str
+    type: Optional[str] = Field(None, alias='@type')
+    name: Optional[str] = None
 
-@partial_model
 class Record(BaseModel):
     id: Optional[str] = Field(None, alias='_id')
     context: Optional[List[Any]] = Field(None, alias='@context')
@@ -53,27 +29,26 @@ class Record(BaseModel):
     extensionSchemas: Optional[List[str]] = Field(None, alias='_extensionSchemas')
     type: Optional[List[str]] = Field(None, alias='@type')
     record_id: Optional[str] = Field(None, alias='@id')
-    title: Optional[str]
-    contactPoint: Optional[ContactPoint]
-    modified: Optional[str]
-    status: Optional[str]
-    ediid: Optional[str]
-    landingPage: Optional[str]
-    description: Optional[List[str]]
-    keyword: Optional[List[str]]
-    theme: Optional[List[str]]
-    topic: Optional[List[Dict[str, str]]]
-    references: Optional[List[Dict[str, Any]]]
-    accessLevel: Optional[str]
-    license: Optional[str]
-    inventory: Optional[List[Inventory]]
-    components: Optional[List[Components]]
-    publisher: Optional[Publisher]
-    language: Optional[List[str]]
-    bureauCode: Optional[List[str]]
-    programCode: Optional[List[str]]
-    version: Optional[str]
-    lang: Optional[str]
+    title: Optional[str] = None
+    contactPoint: Optional[ContactPoint] = None
+    modified: Optional[str] = None
+    status: Optional[str] = None
+    ediid: Optional[str] = None
+    landingPage: Optional[str] = None
+    description: Optional[List[str]] = None
+    keyword: Optional[List[str]] = None
+    theme: Optional[List[str]] = None
+    topic: Optional[List[Dict[str, str]]] = None
+    references: Optional[List[Dict[str, Any]]] = None
+    accessLevel: Optional[str] = None
+    license: Optional[str] = None
+    inventory: Optional[List[Inventory]] = None
+    components: Optional[List[Components]] = None
+    publisher: Optional[Publisher] = None
+    language: Optional[List[str]] = None
+    bureauCode: Optional[List[str]] = None
+    programCode: Optional[List[str]] = None
+    version: Optional[str] = None
 
     class Config:
         from_attributes = True
