@@ -60,7 +60,10 @@ def search_records(
     skip: int = 0, 
     limit: int = 10, 
     sort_desc: Optional[List[str]] = None, 
-    sort_asc: Optional[List[str]] = None
+    sort_asc: Optional[List[str]] = None,
+    include: Optional[List[str]] = None,  # new parameter
+    exclude: Optional[List[str]] = None,  # new parameter
+    logicalOp: Optional[str] = "AND"  # new parameter
 ) -> Dict[str, Any]:
     print('Searching records for query: ', query, flush=True)
     start_time = time.time()
@@ -74,7 +77,22 @@ def search_records(
         for field in sort_asc:
             sort_params.append((field, 1))
 
-    cursor = db.records.find({"$text": {"$search": query}}).skip(skip).limit(limit)
+    # Build the MongoDB query
+    mongo_query = {"$text": {"$search": query}}
+
+    # Apply the include and exclude parameters
+    if include or exclude:
+        field_query = {}
+        if include:
+            field_query["$all"] = include
+        if exclude:
+            field_query["$nin"] = exclude
+        if logicalOp == "AND":
+            mongo_query["$and"] = [mongo_query, field_query]
+        elif logicalOp == "OR":
+            mongo_query["$or"] = [mongo_query, field_query]
+
+    cursor = db.records.find(mongo_query).skip(skip).limit(limit)
     if sort_params:
         cursor = cursor.sort(sort_params)
         
@@ -87,7 +105,7 @@ def search_records(
         if isinstance(record['_id'], ObjectId):
             record['_id'] = str(record['_id'])
     result_data = [Record(**record) for record in records]
-    result_count = db.records.count_documents({"$text": {"$search": query}})
+    result_count = db.records.count_documents(mongo_query)
     
     print('Search completed in ', elapsed_time, ' seconds.', flush=True)
     print('Returning ', result_count, ' results.', flush=True)

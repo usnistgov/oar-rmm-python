@@ -59,14 +59,17 @@ def search_records(
 
     # Validate the query parameters
     validate_query_string(params)
-    
+    print(params.dict(), flush=True)
     # Perform the search
     search_results = crud.search_records(
         query=params.query or "",
         skip=params.page * params.size,
         limit=params.size,
         sort_desc=params.sort_desc,
-        sort_asc=params.sort_asc
+        sort_asc=params.sort_asc,
+        include=params.include,
+        exclude=params.exclude,
+        logicalOp=params.logicalOp
     )
     
     return JSONResponse(content={
