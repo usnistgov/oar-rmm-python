@@ -108,7 +108,6 @@ def search_records(
     result_count = db.records.count_documents(mongo_query)
     
     print('Search completed in ', elapsed_time, ' seconds.', flush=True)
-    print('Returning ', result_count, ' results.', flush=True)
     
     return {
         "Metrics": {
@@ -116,5 +115,5 @@ def search_records(
         },
         "ResultCount": result_count,
         "PageSize": limit,
-        "ResultData": [record.dict() for record in result_data],
+        "ResultData": [record.model_dump() for record in result_data],
     }

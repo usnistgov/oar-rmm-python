@@ -27,7 +27,6 @@ class SearchParams(BaseModel):
         return values
 
 def validate_query_string(params: SearchParams):
-    print(params.dict())
     if params.logicalOp:
         for i, logical_op in enumerate(params.logicalOp):
             if logical_op and (i == 0 or (params.include and params.include[i - 1]) or (params.exclude and params.exclude[i - 1])):
@@ -59,7 +58,6 @@ def search_records(
 
     # Validate the query parameters
     validate_query_string(params)
-    print(params.dict(), flush=True)
     # Perform the search
     search_results = crud.search_records(
         query=params.query or "",

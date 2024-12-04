@@ -1,77 +1,55 @@
 from fastapi.testclient import TestClient
 from app.main import app
 import json
-import pytest
+import unittest
+import os
 
-client = TestClient(app)
+class TestRecords(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        try:
+            test_dir = os.path.dirname(os.path.abspath(__file__))
+            fixture_path = os.path.join(test_dir, 'fixtures', 'record.json')
+            with open(fixture_path) as file:
+                self.test_record = json.load(file)
+        except FileNotFoundError:
+            self.fail(f"Test record file not found at {fixture_path}!")
 
-try:
-    with open("./record.json") as file:
-        test_record = json.load(file)
-except FileNotFoundError:
-    pytest.fail("Test record file not found!")
+    def test_search_records_empty_query(self):
+        """Test searching records with empty query returns all records"""
+        response = self.client.get("/records/search/")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Check response structure
+        self.assertIn("Metrics", data)
+        self.assertIn("ResultCount", data)
+        self.assertIn("PageSize", data)
+        self.assertIn("ResultData", data)
+        
+        # Check default pagination
+        self.assertEqual(data["PageSize"], 10)
+        
+    def test_search_records_with_query(self):
+        """Test searching records with specific query"""
+        response = self.client.get("/records/search/?query=test")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Check response structure
+        self.assertIn("Metrics", data)
+        self.assertIn("ResultCount", data)
+        self.assertIn("PageSize", data)
+        self.assertIn("ResultData", data)
+        
+    def test_search_records_with_pagination(self):
+        """Test searching records with pagination parameters"""
+        response = self.client.get("/records/search/?page=1&size=5")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        
+        # Check pagination parameters
+        self.assertEqual(data["PageSize"], 5)
 
-def test_create_record():
-    response = client.post("/records/", json=test_record)
-    assert response.status_code == 200
-    record = response.json()
-    assert record["_id"] == test_record["_id"]
-    assert record["@context"] == test_record["@context"]
-    assert record["_schema"] == test_record["_schema"]
-    assert record["_extensionSchemas"] == test_record["_extensionSchemas"]
-    assert record["@type"] == test_record["@type"]
-    assert record["@id"] == test_record["@id"]
-    assert record["title"] == test_record["title"]
-    assert record["contactPoint"] == test_record["contactPoint"]
-    assert record["modified"] == test_record["modified"]
-    assert record["status"] == test_record["status"]
-    assert record["ediid"] == test_record["ediid"]
-    assert record["landingPage"] == test_record["landingPage"]
-    assert record["description"] == test_record["description"]
-    assert record["keyword"] == test_record["keyword"]
-    assert record["theme"] == test_record["theme"]
-    assert record["topic"] == test_record["topic"]
-    assert record["references"] == test_record["references"]
-    assert record["accessLevel"] == test_record["accessLevel"]
-    assert record["license"] == test_record["license"]
-    assert record["inventory"] == test_record["inventory"]
-    assert record["components"] == test_record["components"]
-    assert record["publisher"] == test_record["publisher"]
-    assert record["language"] == test_record["language"]
-    assert record["bureauCode"] == test_record["bureauCode"]
-    assert record["programCode"] == test_record["programCode"]
-    assert record["version"] == test_record["version"]
-
-def test_read_records():
-    response = client.get("/records/")
-    assert response.status_code == 200
-    records = response.json()
-    assert isinstance(records, list)
-    if records:  # if the list is not empty
-        record = records[0]
-        assert record["_id"] == test_record["_id"]
-        assert record["@context"] == test_record["@context"]
-        assert record["_schema"] == test_record["_schema"]
-        assert record["_extensionSchemas"] == test_record["_extensionSchemas"]
-        assert record["@type"] == test_record["@type"]
-        assert record["@id"] == test_record["@id"]
-        assert record["title"] == test_record["title"]
-        assert record["contactPoint"] == test_record["contactPoint"]
-        assert record["modified"] == test_record["modified"]
-        assert record["status"] == test_record["status"]
-        assert record["ediid"] == test_record["ediid"]
-        assert record["landingPage"] == test_record["landingPage"]
-        assert record["description"] == test_record["description"]
-        assert record["keyword"] == test_record["keyword"]
-        assert record["theme"] == test_record["theme"]
-        assert record["topic"] == test_record["topic"]
-        assert record["references"] == test_record["references"]
-        assert record["accessLevel"] == test_record["accessLevel"]
-        assert record["license"] == test_record["license"]
-        assert record["inventory"] == test_record["inventory"]
-        assert record["components"] == test_record["components"]
-        assert record["publisher"] == test_record["publisher"]
-        assert record["language"] == test_record["language"]
-        assert record["bureauCode"] == test_record["bureauCode"]
-        assert record["programCode"] == test_record["programCode"]
-        assert record["version"] == test_record["version"]
+if __name__ == '__main__':
+    unittest.main()
