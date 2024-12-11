@@ -32,7 +32,7 @@ class TestRecords(unittest.TestCase):
         
     def test_search_records_with_query(self):
         """Test searching records with specific query"""
-        response = self.client.get("/records/search/?query=test")
+        response = self.client.get("/records/search/?query=Campus Photovoltaic")
         self.assertEqual(response.status_code, 200)
         data = response.json()
         

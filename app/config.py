@@ -11,8 +11,15 @@ print(f"Loading .env file from: {dotenv_path}")
 load_dotenv(dotenv_path=dotenv_path)  # Load the specified .env file
 
 class Settings(BaseSettings):
+    # Primary Database Configuration
     MONGO_URI: str
     DB_NAME: str
+    
+    # Metrics Database Configuration
+    MONGO_URI_METRICS: Optional[str] = None
+    DB_NAME_METRICS: Optional[str] = None
+    
+    # Remote Configuration
     USE_REMOTE_CONFIG: bool = False
     REMOTE_CONFIG_URL: Optional[str] = None
 
@@ -40,3 +47,10 @@ settings = Settings.load()
 
 print(f"MONGO_URI: {settings.MONGO_URI}")
 print(f"DB_NAME: {settings.DB_NAME}")
+
+# Print Metrics Database Configuration if provided
+if settings.MONGO_URI_METRICS and settings.DB_NAME_METRICS:
+    print(f"MONGO_URI_METRICS: {settings.MONGO_URI_METRICS}")
+    print(f"DB_NAME_METRICS: {settings.DB_NAME_METRICS}")
+else:
+    print("Metrics database configuration not provided.")
