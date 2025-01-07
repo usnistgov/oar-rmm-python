@@ -1,0 +1,33 @@
+{
+  "_id": "630dee900a0fdddd49bb78a8",
+  "name": "@type",
+  "type": "array",
+  "item_type": "string",
+  "label": "Resource type",
+  "tags": ["searchable"],
+  "tips": {
+    "search": "the type of resource"
+  },
+  "values": [
+    {
+      "value": "nrdp:PublicDataResource",
+      "label": "Public Data Resource",
+      "description": "a data collection, service, or web site that is publically available from NIST"
+    },
+    {
+      "value": "nrdp:DataPublication",
+      "label": "NIST Data Publication",
+      "description": "a data collection, service, or web site that is publically available from NIST"
+    },
+    {
+      "value": "nrd:Portal",
+      "label": "Research Portal",
+      "description": "a web site featuring tools and services useful for research"
+    },
+    {
+      "value": "nrdp:SRD",
+      "label": "Standard Referernce Dataset",
+      "description": "a data collection from the NIST Standard Reference Data program"
+    }
+  ]
+}

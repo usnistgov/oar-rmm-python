@@ -22,5 +22,6 @@ db.records.create_index([("landingPage", 1)])
 db.records.create_index([("ediid", 1)])
 db.records.create_index([("modified", 1)])
 db.records.create_index([("status", 1)])
+db.fields.create_index([("tags", 1)])
 
 print('Database connection established and indexes created.', flush=True)

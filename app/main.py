@@ -1,12 +1,13 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from app.routers import record
+from app.routers import record, field
 from app.config import settings
 import os
 
 app = FastAPI()
 
 app.include_router(record.router)
+app.include_router(field.router)
 
 @app.on_event("startup")
 def startup_event():
