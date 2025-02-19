@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from app.routers import record, field
+from app.routers import paper, record, field, code, patent
 from app.config import settings
 import os
 
@@ -8,6 +8,9 @@ app = FastAPI()
 
 app.include_router(record.router)
 app.include_router(field.router)
+app.include_router(paper.router) 
+app.include_router(code.router)
+app.include_router(patent.router)
 
 @app.on_event("startup")
 def startup_event():

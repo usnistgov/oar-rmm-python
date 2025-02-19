@@ -1,78 +1,35 @@
-from fastapi import APIRouter, HTTPException, Request, Depends, Query
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, Field, root_validator
-from fastapi.responses import JSONResponse
-from app.schemas.response import SearchResult
-from app.crud import record as crud
+from fastapi import APIRouter, Query
+from typing import List, Optional, Dict, Any
+from app.crud.record import record_crud
 
 router = APIRouter()
 
-class SearchParams(BaseModel):
-    include: Optional[List[str]] = Field(default_factory=[])
-    exclude: Optional[List[str]] = Field(default_factory=[])
-    logicalOp: Optional[List[str]] = Field(default_factory=[])
-    query: Optional[str] = None
-    page: int = 0
-    size: int = 10
-    sort_desc: Optional[List[str]] = Field(default_factory=[])
-    sort_asc: Optional[List[str]] = Field(default_factory=[])
-    
-    @root_validator(pre=True)
-    def set_default_lists(cls, values):
-        values['include'] = values.get('include', [])
-        values['exclude'] = values.get('exclude', [])
-        values['logicalOp'] = values.get('logicalOp', [])
-        values['sort_desc'] = values.get('sort_desc', [])
-        values['sort_asc'] = values.get('sort_asc', [])
-        return values
-
-def validate_query_string(params: SearchParams):
-    if params.logicalOp:
-        for i, logical_op in enumerate(params.logicalOp):
-            if logical_op and (i == 0 or (params.include and params.include[i - 1]) or (params.exclude and params.exclude[i - 1])):
-                raise HTTPException(status_code=400, detail="There should be a key=value parameter after logicalOp.")
-
-@router.get("/records/search/", response_model=SearchResult)
-def search_records(
-    request: Request,
-    include: Optional[List[str]] = Query(default=[]),
-    exclude: Optional[List[str]] = Query(default=[]),
-    logicalOp: Optional[List[str]] = Query(default=[]),
-    query: Optional[str] = Query(None),
-    page: int = Query(0),
-    size: int = Query(10),
-    sort_desc: Optional[List[str]] = Query(default=[]),
-    sort_asc: Optional[List[str]] = Query(default=[]),
+@router.get("/records/")
+@router.get("/records")
+async def search_records(
+    searchphrase: Optional[str] = Query(None, description="Text to search for"),
+    skip: int = Query(0, description="Number of records to skip"),
+    limit: int = Query(10, description="Maximum number of records to return"),
+    sort_asc: Optional[List[str]] = Query(None, description="Fields to sort ascending"),
+    sort_desc: Optional[List[str]] = Query(None, description="Fields to sort descending"),
+    include: Optional[List[str]] = Query(None, description="Fields to include"),
+    exclude: Optional[List[str]] = Query(None, description="Fields to exclude"),
+    logical_op: str = Query("AND", description="Logical operator for conditions"),
 ):
-    # Create the SearchParams object
-    params = SearchParams(
+    return record_crud.search(
+        searchphrase=searchphrase,
+        skip=skip,
+        limit=limit,
+        sort_asc=sort_asc,
+        sort_desc=sort_desc,
         include=include,
         exclude=exclude,
-        logicalOp=logicalOp,
-        query=query,
-        page=page,
-        size=size,
-        sort_desc=sort_desc,
-        sort_asc=sort_asc
+        logical_op=logical_op
     )
+# @router.post("/records/")
+# async def create_record(data: Dict[str, Any]):
+#     return record_crud.create(data)
 
-    # Validate the query parameters
-    validate_query_string(params)
-    # Perform the search
-    search_results = crud.search_records(
-        query=params.query or "",
-        skip=params.page * params.size,
-        limit=params.size,
-        sort_desc=params.sort_desc,
-        sort_asc=params.sort_asc,
-        include=params.include,
-        exclude=params.exclude,
-        logicalOp=params.logicalOp
-    )
-    
-    return JSONResponse(content={
-        "Metrics": search_results["Metrics"],
-        "ResultCount": search_results["ResultCount"],
-        "PageSize": search_results["PageSize"],
-        "ResultData": search_results["ResultData"]
-    })
+@router.get("/records/{record_id}")
+async def get_record(record_id: str):
+    return record_crud.get(record_id)

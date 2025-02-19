@@ -1,30 +1,40 @@
-from fastapi import APIRouter, HTTPException, Query
-from typing import List, Optional
-from app.crud import field as crud
-from app.models.field import FieldModel
-from pydantic import ValidationError
+from fastapi import APIRouter, Query, Body
+from typing import List, Optional, Dict, Any
+from app.crud.field import field_crud
 
 router = APIRouter()
 
 @router.get("/fields/")
-async def get_fields(tags: Optional[List[str]] = Query(None)):
-    """Get all fields, optionally filtered by tags"""
-    try:
-        fields = crud.get_fields(tags)
-        # Validate each field against the model
-        validated_fields = []
-        for field in fields["ResultData"]:
-            try:
-                validated_field = FieldModel(**field)
-                validated_fields.append(validated_field.model_dump())
-            except ValidationError as e:
-                continue  # Skip invalid fields
-                
-        fields["ResultData"] = validated_fields
-        fields["ResultCount"] = len(validated_fields)
-        return fields
-        
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+@router.get("/fields")
+async def search_fields(
+    searchphrase: Optional[str] = Query(None, description="Text to search for"),
+    skip: int = Query(0, description="Number of fields to skip"),
+    limit: int = Query(10, description="Maximum number of fields to return"),
+    sort_asc: Optional[List[str]] = Query(None, description="Fields to sort ascending"),
+    sort_desc: Optional[List[str]] = Query(None, description="Fields to sort descending"),
+    include: Optional[List[str]] = Query(None, description="Fields to include"),
+    exclude: Optional[List[str]] = Query(None, description="Fields to exclude"),
+    logical_op: str = Query("AND", description="Logical operator for conditions"),
+):
+    return field_crud.search(
+        searchphrase=searchphrase,
+        skip=skip,
+        limit=limit,
+        sort_asc=sort_asc,
+        sort_desc=sort_desc,
+        include=include,
+        exclude=exclude,
+        logical_op=logical_op
+    )
+
+@router.post("/fields/")
+async def create_field(
+    data: Dict[str, Any] = Body(..., description="Field data to create")
+):
+    return field_crud.create(data)
+
+@router.get("/fields/{field_id}")
+async def get_field(
+    field_id: str
+):
+    return field_crud.get(field_id)
