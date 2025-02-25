@@ -29,12 +29,14 @@ def create_collection_indexes():
         # Create index for fields collection
         db.fields.create_index([("tags", ASCENDING)])
         logger.info("Created index for fields collection")
+        db.code.create_index([("$**", "text")])
+        logger.info("Created text index for code collection")
 
     except Exception as e:
         logger.error(f"Error creating indexes: {e}")
         raise
 
 # Create indexes
-create_collection_indexes()
+# create_collection_indexes()
 
 print('Database connection established and indexes created.', flush=True)

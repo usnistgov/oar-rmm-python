@@ -1,86 +1,45 @@
-from fastapi import APIRouter, Query
-from typing import Optional, Dict, Any, List
-import requests
-import logging
-from fuzzywuzzy import fuzz
-import time
-
-logger = logging.getLogger(__name__)
-
-CODE_API_URL = "https://code.nist.gov/explore/code.json"
+from fastapi import APIRouter, Query, Depends, Body
+from typing import List, Optional, Dict, Any
+from app.crud.code import code_crud
+from app.middleware.dependencies import validate_search_params
 
 router = APIRouter()
 
-def filter_fields(doc: Dict[str, Any], include: Optional[List[str]] = None, exclude: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Filter document fields based on include/exclude lists"""
-    if include:
-        return {k: v for k, v in doc.items() if k in include}
-    elif exclude:
-        return {k: v for k, v in doc.items() if k not in exclude}
-    return doc
-
 @router.get("/code/")
 @router.get("/code")
-async def search_code(
-    searchphrase: Optional[str] = Query(None, description="Text to search for"),
-    skip: int = Query(0, description="Number of items to skip"),
-    limit: int = Query(10, description="Maximum number of items to return"),
-    sort_asc: Optional[List[str]] = Query(None, description="Fields to sort ascending"),
-    sort_desc: Optional[List[str]] = Query(None, description="Fields to sort descending"),
-    include: Optional[List[str]] = Query(None, description="Fields to include"),
-    exclude: Optional[List[str]] = Query(None, description="Fields to exclude")
+async def search_code(params: Dict[str, Any] = Depends(validate_search_params)):
+    """
+    Search code entries in the database.
+    
+    Args:
+        params (Dict[str, Any]): Search parameters including:
+            - searchphrase (str, optional): Text to search for
+            - skip (int, optional): Number of records to skip
+            - limit (int, optional): Maximum records to return
+            - sort.desc/sort.asc (str, optional): Fields to sort by
+            
+    Returns:
+        Dict: {
+            "ResultData": List of matched records,
+            "ResultCount": Total number of matches,
+            "PageSize": Number of records per page,
+            "Metrics": Query execution metrics
+        }
+    """
+    return code_crud.search(**params)
+
+@router.post("/code/")
+async def create_code(
+    data: Dict[str, Any] = Body(..., description="Code data to create")
 ):
     """
-    Search or list code repositories with optional fuzzy matching
+    Create a new code entry
     """
-    start_time = time.time()
-    
-    try:
-        response = requests.get(CODE_API_URL)
-        response.raise_for_status()
-        
-        json_data = response.json()
-        if isinstance(json_data, dict):
-            json_data = [json_data]
-            
-        results = []
-        added_repo_names = set()
-        
-        for item in json_data:
-            releases = item.get("releases", [])
-            for release in releases:
-                repo_name = release.get('name')
-                if not repo_name:
-                    continue
-                    
-                if searchphrase:
-                    similarity_ratio = fuzz.partial_ratio(repo_name.lower(), searchphrase.lower())
-                    if similarity_ratio >= 70 and repo_name not in added_repo_names:
-                        added_repo_names.add(repo_name)
-                        # Filter fields before adding to results
-                        filtered_release = filter_fields(release, include, exclude)
-                        results.append(filtered_release)
-                elif repo_name not in added_repo_names:
-                    added_repo_names.add(repo_name)
-                    # Filter fields before adding to results
-                    filtered_release = filter_fields(release, include, exclude)
-                    results.append(filtered_release)
-        
-        # Apply pagination
-        paginated_results = results[skip:skip + limit]
-        
-        return {
-            "ResultData": paginated_results,
-            "ResultCount": len(results),
-            "PageSize": limit,
-            "Metrics": {"ElapsedTime": time.time() - start_time}
-        }
-        
-    except Exception as e:
-        logger.error(f"Code API error: {str(e)}")
-        return {
-            "error": str(e),
-            "ResultCount": 0,
-            "ResultData": [],
-            "Metrics": {"ElapsedTime": time.time() - start_time}
-        }
+    return code_crud.create(data)
+
+@router.get("/code/{code_id}")
+async def get_code(code_id: str):
+    """
+    Get a single code entry by ID
+    """
+    return code_crud.get(code_id)

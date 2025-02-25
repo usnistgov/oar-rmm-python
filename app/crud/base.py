@@ -1,3 +1,4 @@
+from app.middleware.request_processor import ProcessRequest
 from typing import Dict, Any, List, Optional
 from bson.objectid import ObjectId
 from app.database import db
@@ -9,6 +10,8 @@ logger = logging.getLogger(__name__)
 class BaseCRUD:
     def __init__(self, collection_name: str):
         self.collection = db[collection_name]
+        self.request_processor = ProcessRequest()
+
 
     def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new document"""
@@ -63,84 +66,50 @@ class BaseCRUD:
             logger.error(f"Failed to retrieve documents: {e}")
             raise ValueError("Failed to retrieve documents")
         
-    def search(
-        self,
-        searchphrase: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 10,
-        sort_asc: Optional[List[str]] = None,
-        sort_desc: Optional[List[str]] = None,
-        include: Optional[List[str]] = None,
-        exclude: Optional[List[str]] = None,
-        logical_op: str = "AND",
-        **field_queries: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def search(self, **kwargs) -> Dict[str, Any]:
         """Generic search function"""
         start_time = time.time()
-        
         try:
-            # Build query
-            query = {}
+            # Create new request processor instance for each search
+            self.request_processor = ProcessRequest()
             
-            if searchphrase:
-                if searchphrase.startswith('"') and searchphrase.endswith('"'):
-                    phrase = searchphrase[1:-1]
-                    query["$text"] = {"$search": f"\"{phrase}\""}
-                else:
-                    query["$text"] = {"$search": searchphrase}
+            # Process request parameters
+            processed = self.request_processor.process_search_params(kwargs)
+            
+            logger.info(f"Search parameters: {kwargs}")
+            logger.info(f"Processed query: {processed}")
 
-            # Handle field queries
-            field_conditions = []
-            for field, value in field_queries.items():
-                if isinstance(value, str) and ',' in value:
-                    values = [v.strip() for v in value.split(',')]
-                    field_conditions.append({field: {"$in": values}})
-                else:
-                    field_conditions.append({field: value})
-
-            if field_conditions:
-                if len(field_conditions) > 1:
-                    query[f"${logical_op.lower()}"] = field_conditions
-                else:
-                    query.update(field_conditions[0])
-
-            # Projection
-            projection = {}
-            if include:
-                projection.update({field: 1 for field in include})
-            if exclude:
-                projection.update({field: 0 for field in exclude})
-
-            # Sorting
-            sort_params = []
-            if sort_asc:
-                sort_params.extend((field, 1) for field in sort_asc)
-            if sort_desc:
-                sort_params.extend((field, -1) for field in sort_desc)
-
-            # Execute query
+            # Execute query with processed parameters
             cursor = self.collection.find(
-                filter=query,
-                projection=projection if projection else None
-            ).skip(skip).limit(limit)
+                filter=processed["query"],
+                projection=processed["projection"]
+            )
 
-            if sort_params:
-                cursor = cursor.sort(sort_params)
+            if processed["skip"]:
+                cursor = cursor.skip(processed["skip"])
+            
+            if processed["limit"]:
+                cursor = cursor.limit(processed["limit"])
 
-            # Process results
+            if processed["sort"]:
+                cursor = cursor.sort(processed["sort"])
+
+            # Get results
             docs = list(cursor)
+            logger.info(f"Found {len(docs)} documents")
+            
             for doc in docs:
                 doc["_id"] = str(doc["_id"])
 
-            result_count = self.collection.count_documents(query)
+            count = self.collection.count_documents(processed["query"])
+            
+            return {
+                "ResultData": docs,
+                "ResultCount": count,
+                "PageSize": processed["limit"],
+                "Metrics": {"ElapsedTime": time.time() - start_time}
+            }
 
         except Exception as e:
             logger.error(f"Search failed: {e}")
             raise ValueError(f"Failed to search documents: {e}")
-
-        return {
-            "Metrics": {"ElapsedTime": time.time() - start_time},
-            "ResultCount": result_count,
-            "PageSize": limit,
-            "ResultData": docs
-        }

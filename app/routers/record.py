@@ -1,31 +1,34 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from typing import List, Optional, Dict, Any
 from app.crud.record import record_crud
+from app.middleware.dependencies import validate_search_params
 
 router = APIRouter()
 
 @router.get("/records/")
 @router.get("/records")
-async def search_records(
-    searchphrase: Optional[str] = Query(None, description="Text to search for"),
-    skip: int = Query(0, description="Number of records to skip"),
-    limit: int = Query(10, description="Maximum number of records to return"),
-    sort_asc: Optional[List[str]] = Query(None, description="Fields to sort ascending"),
-    sort_desc: Optional[List[str]] = Query(None, description="Fields to sort descending"),
-    include: Optional[List[str]] = Query(None, description="Fields to include"),
-    exclude: Optional[List[str]] = Query(None, description="Fields to exclude"),
-    logical_op: str = Query("AND", description="Logical operator for conditions"),
-):
-    return record_crud.search(
-        searchphrase=searchphrase,
-        skip=skip,
-        limit=limit,
-        sort_asc=sort_asc,
-        sort_desc=sort_desc,
-        include=include,
-        exclude=exclude,
-        logical_op=logical_op
-    )
+async def search_records(params: Dict[str, Any] = Depends(validate_search_params)):
+    """
+    Search record entries in the database.
+    
+    Args:
+        params (Dict[str, Any]): Search parameters including:
+            - searchphrase (str, optional): Text to search for
+            - skip (int, optional): Number of records to skip
+            - limit (int, optional): Maximum records to return
+            - include/exclude (List[str], optional): Fields to include/exclude
+            
+    Returns:
+        Dict: {
+            "ResultData": List of matched records,
+            "ResultCount": Total number of matches,
+            "PageSize": Number of records per page,
+            "Metrics": Query execution metrics
+        }
+    """
+    return record_crud.search(**params)
+
+
 # @router.post("/records/")
 # async def create_record(data: Dict[str, Any]):
 #     return record_crud.create(data)

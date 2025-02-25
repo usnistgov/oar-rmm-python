@@ -33,6 +33,28 @@ async def search_papers(
     include: Optional[List[str]] = Query(None, description="Fields to include"),
     exclude: Optional[List[str]] = Query(None, description="Fields to exclude")
 ):
+    """
+    Search papers from the NIST Papers API.
+    
+    Args:
+        searchphrase (str, optional): Text to search for in papers
+        from_date (str, optional): Start date for search (YYYY-MM-DD)
+        skip (int): Number of results to skip (pagination)
+        limit (int): Maximum number of results to return
+        include (List[str], optional): Fields to include in results
+        exclude (List[str], optional): Fields to exclude from results
+        
+    Returns:
+        Dict: {
+            "ResultData": List of matched papers,
+            "ResultCount": Total matches found,
+            "PageSize": Number of results per page,
+            "Metrics": Query execution metrics
+        }
+        
+    Raises:
+        HTTPException: If the Papers API request fails
+    """
     start_time = time.time()
     
     try:
