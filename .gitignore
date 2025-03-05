@@ -117,3 +117,9 @@ dmypy.json
 
 # Database files
 db/
+
+# Certificate files
+app/certificates/*.crt
+app/certificates/*.pem
+app/certificates/*.key
+app/certificates/*.cert
