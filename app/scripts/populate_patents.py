@@ -1,8 +1,10 @@
 import json
 import logging
 from pathlib import Path
+from datetime import datetime
 from app.database import db
 from app.crud.patent import patent_crud
+from app.middleware.exceptions import InternalServerException
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ def populate_patents_collection():
         
         if not patents_file.exists():
             logger.error(f"Patents file not found: {patents_file}")
-            return False
+            raise InternalServerException(f"Patents file not found: {patents_file}")
             
         # Clear existing collection
         db.patents.drop()
@@ -48,9 +50,12 @@ def populate_patents_collection():
         logger.info(f"Successfully imported {len(patents)} patents")
         return True
         
+    except InternalServerException:
+        # Re-raise specific exceptions
+        raise
     except Exception as e:
         logger.error(f"Failed to populate patents collection: {e}")
-        return False
+        raise InternalServerException(f"Failed to populate patents collection: {str(e)}")
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)

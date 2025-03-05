@@ -1,9 +1,11 @@
+from pathlib import Path
 import certifi
 import requests
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from typing import Optional, List, Dict, Any
 import logging
 import time
+from app.middleware.exceptions import KeyWordNotFoundException, InternalServerException, IllegalArgumentException
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +14,7 @@ PAPERS_API_HEADERS = {
     "accept": "application/json",
     "Content-Type": "application/json; x-api-version=1.0"
 }
+CERT_PATH = Path(__file__).parent.parent / "certificates" / "nist_cert.crt"
 
 router = APIRouter()
 
@@ -26,6 +29,7 @@ def filter_fields(doc: Dict[str, Any], include: Optional[List[str]] = None, excl
 @router.get("/papers/")
 @router.get("/papers")
 async def search_papers(
+    request: Request,
     searchphrase: Optional[str] = Query(None, description="Text to search for"),
     from_date: Optional[str] = Query("2010-01-01", description="Search from date (YYYY-MM-DD)"),
     skip: int = Query(0, description="Number of papers to skip"),
@@ -53,33 +57,59 @@ async def search_papers(
         }
         
     Raises:
-        HTTPException: If the Papers API request fails
+        KeyWordNotFoundException: If no papers found matching the criteria
+        InternalServerException: If there is an error connecting to the Papers API
+        IllegalArgumentException: If the parameters are invalid
     """
     start_time = time.time()
     
     try:
-        verify = certifi.where()
+        # Validate parameters
+        if include and exclude:
+            raise IllegalArgumentException("Cannot use both include and exclude parameters")
+        
+        if skip < 0 or limit <= 0:
+            raise IllegalArgumentException("Skip must be non-negative and limit must be positive")
+        
+        # Check if certificate exists
+        if not CERT_PATH.exists():
+            logger.error(f"Certificate file not found: {CERT_PATH}")
+            raise InternalServerException("Certificate file not found")
+            
+        verify = str(CERT_PATH)
         
         payload = {
             "searchString": searchphrase if searchphrase else "",
             "fromDate": f"{from_date}T00:00:00.000Z"
         }
 
-        response = requests.post(
-            PAPERS_API_URL,
-            json=payload,
-            headers=PAPERS_API_HEADERS,
-            verify=verify
-        )
+        try:
+            response = requests.post(
+                PAPERS_API_URL,
+                json=payload,
+                headers=PAPERS_API_HEADERS,
+                verify=verify
+            )
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to connect to Papers API: {str(e)}")
+            raise InternalServerException(f"Failed to connect to Papers API: {str(e)}")
 
         if response.status_code == 200:
             papers_data = response.json()
+            
+            # If no results were found
+            if not papers_data:
+                raise KeyWordNotFoundException(str(request.url))
             
             # Filter fields and apply pagination
             filtered_data = [
                 filter_fields(paper, include, exclude) 
                 for paper in papers_data
             ][skip:skip + limit] if papers_data else []
+            
+            # If pagination results in empty results
+            if not filtered_data:
+                raise KeyWordNotFoundException(str(request.url))
             
             return {
                 "ResultData": filtered_data,
@@ -89,18 +119,11 @@ async def search_papers(
             }
         else:
             logger.error(f"Papers API error: {response.status_code}")
-            return {
-                "error": f"Error from Papers API: {response.status_code}",
-                "ResultCount": 0,
-                "ResultData": [],
-                "Metrics": {"ElapsedTime": time.time() - start_time}
-            }
+            raise InternalServerException(f"Error from Papers API: {response.status_code}")
 
+    except (KeyWordNotFoundException, IllegalArgumentException, InternalServerException):
+        # Re-raise these exceptions for the global exception handlers
+        raise
     except Exception as e:
-        logger.error(f"Paper search error: {str(e)}")
-        return {
-            "error": str(e),
-            "ResultCount": 0,
-            "ResultData": [],
-            "Metrics": {"ElapsedTime": time.time() - start_time}
-        }
+        logger.error(f"Unexpected error in paper search: {str(e)}")
+        raise InternalServerException(str(request.url))

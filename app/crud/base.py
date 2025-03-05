@@ -1,4 +1,5 @@
 from app.middleware.request_processor import ProcessRequest
+from app.middleware.exceptions import ResourceNotFoundException, InternalServerException, KeyWordNotFoundException, IllegalArgumentException
 from typing import Dict, Any, List, Optional
 from bson.objectid import ObjectId
 from app.database import db
@@ -11,7 +12,6 @@ class BaseCRUD:
     def __init__(self, collection_name: str):
         self.collection = db[collection_name]
         self.request_processor = ProcessRequest()
-
 
     def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create a new document"""
@@ -26,7 +26,7 @@ class BaseCRUD:
             }
         except Exception as e:
             logger.error(f"Failed to create document: {e}")
-            raise ValueError("Failed to create document")
+            raise InternalServerException(f"Failed to create document: {str(e)}")
 
     def get(self, doc_id: str) -> Dict[str, Any]:
         """Get a single document by ID"""
@@ -34,16 +34,19 @@ class BaseCRUD:
         try:
             doc = self.collection.find_one({"_id": ObjectId(doc_id)})
             if not doc:
-                raise ValueError("Document not found")
+                raise ResourceNotFoundException(f"Document with ID {doc_id} not found")
             doc["_id"] = str(doc["_id"])
             return {
                 "ResultData": [doc],
                 "ResultCount": 1,
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
+        except ResourceNotFoundException as e:
+            logger.error(f"Document not found: {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to retrieve document: {e}")
-            raise ValueError("Failed to retrieve document")
+            raise InternalServerException(f"Failed to retrieve document: {str(e)}")
 
     def get_all(self, skip: int = 0, limit: int = 10, **filters) -> Dict[str, Any]:
         """Get all documents with optional filtering"""
@@ -51,6 +54,10 @@ class BaseCRUD:
         try:
             cursor = self.collection.find(filters).skip(skip).limit(limit)
             docs = list(cursor)
+            
+            if not docs:
+                raise KeyWordNotFoundException("No documents found matching the criteria")
+                
             for doc in docs:
                 doc["_id"] = str(doc["_id"])
             
@@ -62,9 +69,12 @@ class BaseCRUD:
                 "PageSize": limit,
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
+        except KeyWordNotFoundException as e:
+            logger.error(f"No documents found: {e}")
+            raise
         except Exception as e:
             logger.error(f"Failed to retrieve documents: {e}")
-            raise ValueError("Failed to retrieve documents")
+            raise InternalServerException(f"Failed to retrieve documents: {str(e)}")
         
     def search(self, **kwargs) -> Dict[str, Any]:
         """Generic search function"""
@@ -74,7 +84,12 @@ class BaseCRUD:
             self.request_processor = ProcessRequest()
             
             # Process request parameters
-            processed = self.request_processor.process_search_params(kwargs)
+            try:
+                processed = self.request_processor.process_search_params(kwargs)
+            except Exception as e:
+                # If there's an error processing the search parameters, it's likely an illegal argument
+                logger.error(f"Error processing search parameters: {e}")
+                raise IllegalArgumentException(str(e))
             
             logger.info(f"Search parameters: {kwargs}")
             logger.info(f"Processed query: {processed}")
@@ -98,6 +113,9 @@ class BaseCRUD:
             docs = list(cursor)
             logger.info(f"Found {len(docs)} documents")
             
+            if not docs:
+                raise KeyWordNotFoundException("No documents found matching the search criteria")
+                
             for doc in docs:
                 doc["_id"] = str(doc["_id"])
 
@@ -109,7 +127,12 @@ class BaseCRUD:
                 "PageSize": processed["limit"],
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
-
+        except KeyWordNotFoundException as e:
+            logger.error(f"No search results: {e}")
+            raise
+        except IllegalArgumentException as e:
+            logger.error(f"Invalid search parameters: {e}")
+            raise
         except Exception as e:
             logger.error(f"Search failed: {e}")
-            raise ValueError(f"Failed to search documents: {e}")
+            raise InternalServerException(f"Failed to search documents: {str(e)}")

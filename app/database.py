@@ -1,14 +1,30 @@
 from pymongo import MongoClient, ASCENDING, TEXT
 from app.config import settings
 import logging
+from app.middleware.exceptions import InternalServerException
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-client = MongoClient(settings.MONGO_URI)
-db_name = settings.DB_NAME
-db = client[db_name]
+# Initialize variables
+client = None
+db = None
+
+def connect_db():
+    """Connect to MongoDB and return the database instance"""
+    global client, db
+    
+    try:
+        client = MongoClient(settings.MONGO_URI)
+        db = client[settings.DB_NAME]
+        # Test the connection
+        client.admin.command('ping')
+        logger.info(f"Connected to MongoDB: {settings.DB_NAME}")
+        return db
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {e}")
+        raise InternalServerException(f"Database connection error: {str(e)}")
 
 def create_collection_indexes():
     """Create wildcard text index for all fields"""
@@ -34,9 +50,10 @@ def create_collection_indexes():
 
     except Exception as e:
         logger.error(f"Error creating indexes: {e}")
-        raise
+        raise InternalServerException(f"Failed to create database indexes: {str(e)}")
 
-# Create indexes
+# Pre-connect during import for simpler usage elsewhere
+db = connect_db()
+
+# Optional: Create indexes during startup
 # create_collection_indexes()
-
-print('Database connection established and indexes created.', flush=True)

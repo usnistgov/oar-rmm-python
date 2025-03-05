@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, Request
 from typing import List, Optional, Dict, Any
 from app.crud.record import record_crud
 from app.middleware.dependencies import validate_search_params
@@ -7,7 +7,7 @@ router = APIRouter()
 
 @router.get("/records/")
 @router.get("/records")
-async def search_records(params: Dict[str, Any] = Depends(validate_search_params)):
+async def search_records(reqest: Request, params: Dict[str, Any] = Depends(validate_search_params)):
     """
     Search record entries in the database.
     
@@ -34,5 +34,5 @@ async def search_records(params: Dict[str, Any] = Depends(validate_search_params
 #     return record_crud.create(data)
 
 @router.get("/records/{record_id}")
-async def get_record(record_id: str):
+async def get_record(reqest: Request, record_id: str):
     return record_crud.get(record_id)

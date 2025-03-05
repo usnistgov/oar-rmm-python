@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Depends, Body
+from fastapi import APIRouter, Query, Depends, Body, Request
 from typing import List, Optional, Dict, Any
 from app.crud.code import code_crud
 from app.middleware.dependencies import validate_search_params
@@ -7,7 +7,7 @@ router = APIRouter()
 
 @router.get("/code/")
 @router.get("/code")
-async def search_code(params: Dict[str, Any] = Depends(validate_search_params)):
+async def search_code(request: Request, params: Dict[str, Any] = Depends(validate_search_params)):
     """
     Search code entries in the database.
     
@@ -30,7 +30,7 @@ async def search_code(params: Dict[str, Any] = Depends(validate_search_params)):
 
 @router.post("/code/")
 async def create_code(
-    data: Dict[str, Any] = Body(..., description="Code data to create")
+    request: Request, data: Dict[str, Any] = Body(..., description="Code data to create")
 ):
     """
     Create a new code entry
@@ -38,7 +38,7 @@ async def create_code(
     return code_crud.create(data)
 
 @router.get("/code/{code_id}")
-async def get_code(code_id: str):
+async def get_code(request: Request, code_id: str):
     """
     Get a single code entry by ID
     """

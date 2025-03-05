@@ -1,10 +1,14 @@
 from typing import Dict, Any, List, Optional
-from fastapi import HTTPException
 from datetime import datetime
 import re
 import logging
 import time
 from pymongo import ASCENDING, DESCENDING
+from app.middleware.exceptions import (
+    IllegalArgumentException, 
+    ResourceNotFoundException,
+    InternalServerException
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,26 +39,17 @@ class ProcessRequest:
         """Validate request input parameters"""
         # Validate searchphrase
         if "searchphrase" in params and isinstance(params["searchphrase"], list):
-            raise HTTPException(
-                status_code=400,
-                detail="Only one 'searchphrase' parameter allowed per request"
-            )
+            raise IllegalArgumentException("Only one 'searchphrase' parameter allowed per request")
 
         # Validate parameter sequence
         param_keys = list(params.keys())
         if "searchphrase" in param_keys and param_keys.index("searchphrase") != 0:
-            raise HTTPException(
-                status_code=400,
-                detail="searchphrase must be the first parameter"
-            )
+            raise IllegalArgumentException("searchphrase must be the first parameter")
 
         # Check searchphrase and logicalOp sequence
         if len(param_keys) > 1:
             if param_keys[0] == "searchphrase" and param_keys[1] == "logicalOp":
-                raise HTTPException(
-                    status_code=400,
-                    detail="'searchphrase' cannot be followed by 'logicalOp'"
-                )
+                raise IllegalArgumentException("'searchphrase' cannot be followed by 'logicalOp'")
 
         # Validate parameter values
         restricted_pattern = re.compile(r"[^a-z0-9.,@_]", re.IGNORECASE)
@@ -64,18 +59,12 @@ class ProcessRequest:
 
             if key in ["exclude", "include", "sort_desc", "sort_asc"]:
                 if isinstance(value, str) and restricted_pattern.search(value):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Invalid characters in {key}"
-                    )
+                    raise IllegalArgumentException(f"Invalid characters in {key}")
             elif key in ["skip", "limit"]:
                 try:
                     int(value)
                 except ValueError:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"{key} must be an integer"
-                    )
+                    raise IllegalArgumentException(f"{key} must be an integer")
 
     def process_search_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Process and build MongoDB query from request parameters"""
@@ -115,8 +104,6 @@ class ProcessRequest:
                     self.exclude = value
                 elif key == "include":
                     self.include = value
-                elif key == "include":
-                    self.include = value
                 elif key == "skip":
                     self.page_number = int(value)
                 elif key == "page":
@@ -145,9 +132,12 @@ class ProcessRequest:
 
             return self._build_query(search_input, start_time)
 
+        except IllegalArgumentException as e:
+            logger.error(f"Illegal argument error: {str(e)}")
+            raise
         except Exception as e:
             logger.error(f"Error processing request: {str(e)}")
-            raise HTTPException(status_code=400, detail=str(e))
+            raise InternalServerException(f"Error processing request: {str(e)}")
 
     def _parse_sorting(self, sort_items: List[tuple]) -> None:
         """Process sorting parameters"""
@@ -155,7 +145,7 @@ class ProcessRequest:
             self.sort = sort_items
         except Exception as e:
             logger.error(f"Error parsing sort parameters: {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid sort parameters: {e}")
+            raise IllegalArgumentException(f"Invalid sort parameters: {str(e)}")
 
     def _validate_projections(self) -> None:
         """Validate and process field projections"""
@@ -165,10 +155,7 @@ class ProcessRequest:
                 for field in self.include.split(","):
                     self.projections[field] = 1
             else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Cannot specify both include and exclude fields"
-                )
+                raise IllegalArgumentException("Cannot specify both include and exclude fields")
         elif self.include:
             self.projections = {field: 1 for field in self.include.split(",")}
         elif self.exclude:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query, Body
+from fastapi import APIRouter, Query, Body, Request
 from typing import List, Optional, Dict, Any
 from app.crud.patent import patent_crud
 
@@ -7,6 +7,7 @@ router = APIRouter()
 @router.get("/patents/")
 @router.get("/patents")
 async def search_patents(
+    reqest: Request,
     searchphrase: Optional[str] = Query(None, description="Text to search for"),
     skip: int = Query(0, description="Number of patents to skip"),
     limit: int = Query(10, description="Maximum number of patents to return"),
