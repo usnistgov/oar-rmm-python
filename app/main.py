@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from app.database import connect_db, create_collection_indexes
-from app.routers import paper, record, field, code, patent
+from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, version
 from app.config import settings
 from app.middleware.exceptions import (
     RMMException, ResourceNotFoundException, KeyWordNotFoundException, 
@@ -24,6 +24,10 @@ app.include_router(field.router)
 app.include_router(paper.router) 
 app.include_router(code.router)
 app.include_router(patent.router)
+app.include_router(api.router)
+app.include_router(releaseset.router)
+app.include_router(taxonomy.router)
+app.include_router(version.router)
 
 @app.exception_handler(ResourceNotFoundException)
 async def resource_not_found_exception_handler(request: Request, exc: ResourceNotFoundException):
@@ -122,33 +126,31 @@ def startup_event():
         time.sleep(0.1)
     
     # Server details
-    print(f"{Fore.YELLOW}    🔌  Server Status:{Style.RESET_ALL} {Fore.GREEN}Online{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}    🔌 Server Status:{Style.RESET_ALL} {Fore.GREEN}Online{Style.RESET_ALL}")
     
     # Database connection
     try:
         db = connect_db()
         print(f"{Fore.YELLOW}    🗄️  Database:{Style.RESET_ALL} {Fore.GREEN}Connected{Style.RESET_ALL} ({db.name})")
-        # Create indexes with proper exception handling
+        
+        # Create indexes with resilient error handling
         try:
-            create_collection_indexes()
-            print(f"{Fore.YELLOW}    📑  Indexes:{Style.RESET_ALL} {Fore.GREEN}Created{Style.RESET_ALL}")
+            index_result = create_collection_indexes()
+            if index_result:
+                print(f"{Fore.YELLOW}    📑 Indexes:{Style.RESET_ALL} {Fore.GREEN}Created{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}    📑 Indexes:{Style.RESET_ALL} {Fore.YELLOW}Partially Created{Style.RESET_ALL}")
         except Exception as e:
             logger.error(f"Failed to create indexes: {e}")
-            print(f"{Fore.YELLOW}    📑  Indexes:{Style.RESET_ALL} {Fore.RED}Failed{Style.RESET_ALL}")
-            # Raise proper exception to be handled by exception handlers
-            raise InternalServerException(f"Failed to create database indexes: {str(e)}")
-    except InternalServerException:
-        # Re-raise with the original message for proper handling
-        raise
+            print(f"{Fore.YELLOW}    📑 Indexes:{Style.RESET_ALL} {Fore.RED}Failed{Style.RESET_ALL}")
+            # Log the error but don't terminate the application
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         print(f"{Fore.YELLOW}    🗄️  Database:{Style.RESET_ALL} {Fore.RED}Connection Failed{Style.RESET_ALL}")
         print(f"{Fore.RED}    ⚠️  Error: {str(e)}{Style.RESET_ALL}")
-        # Raise proper exception to be handled by exception handlers
-        raise InternalServerException(f"Database connection error: {str(e)}")
     
     # Endpoints
-    print(f"{Fore.YELLOW}    🛣️  Routes:{Style.RESET_ALL} {Fore.CYAN}/papers, /records, /fields, /code, /patents{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW}    🛣️  Routes:{Style.RESET_ALL} {Fore.CYAN}/papers, /records, /fields, /code, /patents, /apis, /releasesets, /taxonomy, /versions{Style.RESET_ALL}")
     
     # Footer
     print(f"\n{Fore.BLUE}    📝 {time.strftime('%Y-%m-%d %H:%M:%S')} - NIST RMM API Started{Style.RESET_ALL}")
