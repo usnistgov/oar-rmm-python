@@ -50,13 +50,27 @@ class ProcessRequest:
         if len(param_keys) > 1:
             if param_keys[0] == "searchphrase" and param_keys[1] == "logicalOp":
                 raise IllegalArgumentException("'searchphrase' cannot be followed by 'logicalOp'")
-
-        # Validate parameter values
+            
         restricted_pattern = re.compile(r"[^a-z0-9.,@_]", re.IGNORECASE)
+        # Check for null bytes and path traversal attempts in all parameters
         for key, value in params.items():
             if not value:
                 continue
-
+                
+            # Convert value to string if it's not already
+            str_value = str(value)
+            
+            # Check for null bytes
+            if '\x00' in str_value or '%00' in str_value:
+                logger.warning(f"Null byte detected in parameter {key}: {str_value}")
+                raise IllegalArgumentException(f"Invalid character in parameter {key}: null bytes are not allowed")
+                
+            # Check for path traversal attempts
+            if '../' in str_value or '..%2f' in str_value.lower():
+                logger.warning(f"Path traversal attempt detected in parameter {key}: {str_value}")
+                raise IllegalArgumentException(f"Invalid character sequence in parameter {key}")
+                
+            # Existing validation
             if key in ["exclude", "include", "sort_desc", "sort_asc"]:
                 if isinstance(value, str) and restricted_pattern.search(value):
                     raise IllegalArgumentException(f"Invalid characters in {key}")
@@ -162,9 +176,16 @@ class ProcessRequest:
             self.projections = {field: 0 for field in self.exclude.split(",")}
 
     def _update_map(self, key: str, value: str) -> None:
-        """Update advanced query map"""
+        """Update advanced query map with validation"""
+        # Security checks
+        if '\x00' in value:
+            raise IllegalArgumentException(f"Invalid character in {key}: null bytes are not allowed")
+        
+        # Regular update logic
         if key == "logicalOp":
-            self.logical_ops.append(value.lower())
+            if value.lower() not in ["and", "or", "not"]:
+                raise IllegalArgumentException(f"Invalid logical operator: {value}")
+            self.logical_ops.append(value)
         else:
             if key not in self.adv_map:
                 self.adv_map[key] = []
@@ -178,6 +199,16 @@ class ProcessRequest:
         for key, values in self.adv_map.items():
             if key != "logicalOp":
                 for value in values:
+                    # Second safety check for null bytes
+                    if '\x00' in value:
+                        logger.warning(f"Null byte detected in regex value for {key}: {value}")
+                        raise IllegalArgumentException(f"Invalid character in parameter {key}")
+                    
+                    # Check for potential regex DoS patterns
+                    if len(value) > 100 and ('.*' in value or '.+' in value):
+                        logger.warning(f"Potentially malicious regex detected: {value}")
+                        raise IllegalArgumentException(f"Query too complex for {key}")
+                        
                     search_conditions.append({
                         key: {
                             "$regex": value,

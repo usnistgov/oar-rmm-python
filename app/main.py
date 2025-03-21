@@ -9,6 +9,7 @@ from app.middleware.exceptions import (
     RMMException, ResourceNotFoundException, KeyWordNotFoundException, 
     IllegalArgumentException, GeneralException, InternalServerException, ErrorInfo
 )
+from pymongo.errors import OperationFailure
 import os
 import logging
 import time
@@ -106,6 +107,29 @@ async def general_exception_handler(request: Request, exc: Exception):
         content=error_info.to_dict()
     )
 
+@app.exception_handler(OperationFailure)
+async def mongodb_operation_failure_handler(request: Request, exc: OperationFailure):
+    # Check for null byte error
+    if "null byte" in str(exc).lower():
+        error_info = ErrorInfo(
+            url=str(request.url),
+            message="Invalid character in query: null bytes are not allowed",
+            http_status="400"
+        )
+        return JSONResponse(
+            status_code=400,
+            content=error_info.to_dict()
+        )
+    # Other MongoDB errors
+    error_info = ErrorInfo(
+        url=str(request.url),
+        message="Invalid database query",
+        http_status="400"
+    )
+    return JSONResponse(
+        status_code=400,
+        content=error_info.to_dict()
+    )
 
 @app.on_event("startup")
 def startup_event():
