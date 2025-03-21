@@ -2,8 +2,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from app.database import connect_db, create_collection_indexes
-from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, version
+from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, usagemetrics, version
 from app.config import settings
+from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.exceptions import (
     RMMException, ResourceNotFoundException, KeyWordNotFoundException, 
     IllegalArgumentException, GeneralException, InternalServerException, ErrorInfo
@@ -28,6 +29,10 @@ app.include_router(api.router)
 app.include_router(releaseset.router)
 app.include_router(taxonomy.router)
 app.include_router(version.router)
+app.include_router(usagemetrics.router, tags=["Metrics"])
+
+# Metrics middleware to record API calls
+app.add_middleware(MetricsMiddleware)
 
 @app.exception_handler(ResourceNotFoundException)
 async def resource_not_found_exception_handler(request: Request, exc: ResourceNotFoundException):
@@ -104,22 +109,25 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 @app.on_event("startup")
 def startup_event():
+    # Save config source for display in banner
+    config_source = settings.show_config_source()
+    
     # Clear terminal (works on most terminals)
     os.system('cls' if os.name == 'nt' else 'clear')
     
     # ASCII Art Banner with animation
     ascii_banner = f"""
-{Fore.CYAN}
-    ███╗   ██╗██╗███████╗████████╗    ██████╗ ███╗   ███╗███╗   ███╗
-    ████╗  ██║██║██╔════╝╚══██╔══╝    ██╔══██╗████╗ ████║████╗ ████║
-    ██╔██╗ ██║██║███████╗   ██║       ██████╔╝██╔████╔██║██╔████╔██║
-    ██║╚██╗██║██║╚════██║   ██║       ██╔══██╗██║╚██╔╝██║██║╚██╔╝██║
-    ██║ ╚████║██║███████║   ██║       ██║  ██║██║ ╚═╝ ██║██║ ╚═╝ ██║
-    ╚═╝  ╚═══╝╚═╝╚══════╝   ╚═╝       ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝     ╚═╝
-{Style.RESET_ALL}
-{Fore.GREEN}  🚀 Resource Metadata Management Service - Ready for Requests 🚀{Style.RESET_ALL}
-    ───────────────────────────────────────────────────────────────
-"""
+        {Fore.CYAN}
+            ███╗   ██╗██╗███████╗████████╗    ██████╗ ███╗   ███╗███╗   ███╗
+            ████╗  ██║██║██╔════╝╚══██╔══╝    ██╔══██╗████╗ ████║████╗ ████║
+            ██╔██╗ ██║██║███████╗   ██║       ██████╔╝██╔████╔██║██╔████╔██║
+            ██║╚██╗██║██║╚════██║   ██║       ██╔══██╗██║╚██╔╝██║██║╚██╔╝██║
+            ██║ ╚████║██║███████║   ██║       ██║  ██║██║ ╚═╝ ██║██║ ╚═╝ ██║
+            ╚═╝  ╚═══╝╚═╝╚══════╝   ╚═╝       ╚═╝  ╚═╝╚═╝     ╚═╝╚═╝     ╚═╝
+        {Style.RESET_ALL}
+        {Fore.GREEN}  🚀 Resource Metadata Management Service - Ready for Requests 🚀{Style.RESET_ALL}
+            ───────────────────────────────────────────────────────────────
+    """
     # Print each line with a small delay for animation effect
     for line in ascii_banner.split('\n'):
         print(line)
@@ -127,6 +135,10 @@ def startup_event():
     
     # Server details
     print(f"{Fore.YELLOW}    🔌 Server Status:{Style.RESET_ALL} {Fore.GREEN}Online{Style.RESET_ALL}")
+    
+    # Configuration source
+    source_color = Fore.GREEN if "remote" in config_source else Fore.YELLOW
+    print(f"{Fore.YELLOW}    ⚙️  Config Source:{Style.RESET_ALL} {source_color}{config_source}{Style.RESET_ALL}")
     
     # Database connection
     try:
@@ -156,6 +168,10 @@ def startup_event():
     print(f"\n{Fore.BLUE}    📝 {time.strftime('%Y-%m-%d %H:%M:%S')} - NIST RMM API Started{Style.RESET_ALL}")
     print(f"{Fore.BLUE}    ───────────────────────────────────────────────────────────────{Style.RESET_ALL}\n")
     
+    # Re-display important config info after the banner (won't be cleared)
+    logger.info(f"Configuration source: {config_source}")
+    logger.info(f"Database: {settings.DB_NAME} at {settings.MONGO_HOST}")
+    logger.info(f"Metrics DB: {settings.METRICS_DB_NAME}")
     logger.info("NIST Resource Metadata Management API started successfully")
 
 @app.get("/", response_class=HTMLResponse)

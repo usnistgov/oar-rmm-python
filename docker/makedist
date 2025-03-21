@@ -1,0 +1,27 @@
+#! /bin/bash
+#
+# docker/makedist -- make all components from this repo via the docker containers
+#                    defined in the docker directory.
+#
+# Usage: docker/makedist [--dist-dir=DIR] [python|angular]
+#
+# where:
+#   --dist-dir=DIR     write component distributions to the given directory
+#                      (instead of the default directory, dist)
+#   python             build only the python-based distributions
+#   angular            build only the angular-based distributions
+#
+
+
+echo "********************** makdist in docker for oar-rmm-python"
+prog=`basename $0`
+execdir=`dirname $0`
+[ "$execdir" = "" -o "$execdir" = "." ] && execdir=$PWD
+export CODEDIR=`(cd $execdir/.. > /dev/null 2>&1; pwd)`
+export DOCKERDIR=$execdir
+echo "Creating scripts directory path"
+#This is a repo level scripts directory
+scriptsdir=$DOCKERDIR/../scripts/
+echo "Build python $@"
+#This builds the python section of the portal code
+$scriptsdir/makedist
