@@ -33,7 +33,7 @@ app.include_router(version.router)
 app.include_router(usagemetrics.router, tags=["Metrics"])
 
 # Metrics middleware to record API calls
-app.add_middleware(MetricsMiddleware)
+# app.add_middleware(MetricsMiddleware)
 
 @app.exception_handler(ResourceNotFoundException)
 async def resource_not_found_exception_handler(request: Request, exc: ResourceNotFoundException):

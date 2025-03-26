@@ -140,7 +140,7 @@ echo '#'
 echo '#########################'
 
 # build the components
-installdir=$BUILD_DIR/oar-rmm-python
+installdir=$BUILD_DIR/oar-rmm-python/app
 set -x
 mkdir -p $installdir
 
