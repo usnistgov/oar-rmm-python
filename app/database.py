@@ -1,3 +1,4 @@
+import time
 from pymongo import MongoClient, ASCENDING, TEXT
 from pymongo.errors import OperationFailure
 from app.config import settings
@@ -35,19 +36,26 @@ def connect_db():
     """Connect to MongoDB and return the database instance"""
     global client, db
     
-    try:
-        # Connect to MongoDB
-        client = MongoClient(settings.MONGO_URI)
-        db = client[settings.DB_NAME]
-        
-        # Test the connection
-        client.admin.command('ping')
-        logger.info(f"Connected to MongoDB: {settings.DB_NAME}")
-        return db
-    except Exception as e:
-        logger.error(f"Failed to connect to MongoDB: {e}")
-        raise InternalServerException(f"Database connection error: {str(e)}")
-
+    retry_count = 3
+    for attempt in range(retry_count):
+        try:
+            # Connect to MongoDB
+            logger.info(f"Connecting to MongoDB: {settings.MONGO_URI}")
+            client = MongoClient(settings.MONGO_URI)
+            db = client[settings.DB_NAME]
+            
+            # Test the connection
+            client.admin.command('ping')
+            logger.info(f"Connected to MongoDB: {settings.DB_NAME}")
+            return db
+        except Exception as e:
+            logger.error(f"Failed to connect to MongoDB (attempt {attempt+1}/{retry_count}): {e}")
+            if attempt < retry_count - 1:
+                logger.info(f"Retrying in 2 seconds...")
+                time.sleep(2)
+            else:
+                raise InternalServerException(f"Database connection error: {str(e)}")
+            
 def connect_metrics_db():
     """Connect to metrics MongoDB and return the database instance"""
     global metrics_client, metrics_db

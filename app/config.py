@@ -164,6 +164,9 @@ class Settings(BaseSettings):
                 logger.warning(f"Invalid METRICS_MONGO_PORT: {result['METRICS_MONGO_PORT']}, using default")
                 result["METRICS_MONGO_PORT"] = 27017
         
+        logger.info(f"Using MongoDB Host: {result['MONGO_HOST']}, Port: {result['MONGO_PORT']}")
+        logger.info(f"Using Username: {result['MONGO_USER']}")  # Don't log the password
+        logger.info(f"Constructed MONGO_URI: {result['MONGO_URI'].replace(result['MONGO_PASSWORD'], '********')}")
         return result
 
     @classmethod
