@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     MONGO_PASSWORD: str = os.getenv("MONGO_PASSWORD", "")
     MONGO_HOST: str = os.getenv("MONGO_HOST", "localhost")
     MONGO_PORT: int = int(os.getenv("MONGO_PORT", "27017"))
+
+    MONGO_RW_USER: str = os.getenv("MONGO_RW_USER", "")
+    MONGO_RW_PASSWORD: str = os.getenv("MONGO_RW_PASSWORD", "")
+    MONGO_ADMIN_USER: str = os.getenv("MONGO_ADMIN_USER", "")
+    MONGO_ADMIN_PASSWORD: str = os.getenv("MONGO_ADMIN_PASSWORD", "")
     
     # Metrics database settings
     MONGO_URI_METRICS: str = os.getenv("MONGO_URI_METRICS", "")  # Empty string to use same URI as main db
