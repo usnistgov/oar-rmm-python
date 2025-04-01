@@ -2,7 +2,14 @@
 import time
 import logging
 import sys
+import os
 import pymongo
+
+# Add the project root directory to Python path
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.abspath(os.path.join(script_dir, "../.."))
+sys.path.insert(0, project_root)
+
 from app.config import settings
 
 logging.basicConfig(level=logging.INFO)
