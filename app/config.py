@@ -97,6 +97,10 @@ class Settings(BaseSettings):
             "oar.metrics.mongodb.port": "METRICS_MONGO_PORT",
             "oar.metrics.mongodb.host": "METRICS_MONGO_HOST",
             "oar.metrics.mongodb.database.name": "METRICS_DB_NAME",
+            "oar.mongodb.readwrite.user": "MONGO_RW_USER",
+            "oar.mongodb.readwrite.password": "MONGO_RW_PASSWORD",
+            "oar.mongodb.admin.user": "MONGO_ADMIN_USER",
+            "oar.mongodb.admin.password": "MONGO_ADMIN_PASSWORD",
             "dbcollections.records": "RECORDS_COLLECTION",
             "dbcollections.taxonomy": "TAXONOMY_COLLECTION",
             "dbcollections.resources": "RESOURCES_COLLECTION", 
@@ -132,14 +136,28 @@ class Settings(BaseSettings):
             if "MONGO_USER" in result and "MONGO_PASSWORD" in result:
                 user_part = f"{result['MONGO_USER']}:{result['MONGO_PASSWORD']}@"
             
-            result["MONGO_URI"] = f"mongodb://{user_part}{result['MONGO_HOST']}:{result['MONGO_PORT']}"
+            result["MONGO_URI"] = f"mongodb://{user_part}{result['MONGO_HOST']}:{result['MONGO_PORT']}/?authSource=admin"
         
         if "METRICS_MONGO_HOST" in result and "METRICS_MONGO_PORT" in result:
             user_part = ""
             if "METRICS_MONGO_USER" in result and "METRICS_MONGO_PASSWORD" in result:
                 user_part = f"{result['METRICS_MONGO_USER']}:{result['METRICS_MONGO_PASSWORD']}@"
                 
-            result["MONGO_URI_METRICS"] = f"mongodb://{user_part}{result['METRICS_MONGO_HOST']}:{result['METRICS_MONGO_PORT']}"
+            result["MONGO_URI_METRICS"] = f"mongodb://{user_part}{result['METRICS_MONGO_HOST']}:{result['METRICS_MONGO_PORT']}/?authSource=admin"
+
+        if "MONGO_PORT" in result:
+            try:
+                result["MONGO_PORT"] = int(result["MONGO_PORT"])
+            except ValueError:
+                logger.warning(f"Invalid MONGO_PORT: {result['MONGO_PORT']}, using default")
+                result["MONGO_PORT"] = 27017
+
+        if "METRICS_MONGO_PORT" in result:
+            try:
+                result["METRICS_MONGO_PORT"] = int(result["METRICS_MONGO_PORT"])
+            except ValueError:
+                logger.warning(f"Invalid METRICS_MONGO_PORT: {result['METRICS_MONGO_PORT']}, using default")
+                result["METRICS_MONGO_PORT"] = 27017
         
         return result
 
