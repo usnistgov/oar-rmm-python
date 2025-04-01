@@ -139,16 +139,16 @@ class Settings(BaseSettings):
         if "MONGO_HOST" in result and "MONGO_PORT" in result:
             user_part = ""
             if "MONGO_USER" in result and "MONGO_PASSWORD" in result:
-                user_part = f"{result['MONGO_USER']}:{result['MONGO_PASSWORD']}@"
+                user_part = f"{result['MONGO_USER']}:{result['MONGO_RW_PASSWORD']}@"
             
-            result["MONGO_URI"] = f"mongodb://{user_part}{result['MONGO_HOST']}:{result['MONGO_PORT']}"
+            result["MONGO_URI"] = f"mongodb://{user_part}{result['MONGO_HOST']}:{result['MONGO_PORT']}/?authSource=admin"
         
         if "METRICS_MONGO_HOST" in result and "METRICS_MONGO_PORT" in result:
             user_part = ""
             if "METRICS_MONGO_USER" in result and "METRICS_MONGO_PASSWORD" in result:
                 user_part = f"{result['METRICS_MONGO_USER']}:{result['METRICS_MONGO_PASSWORD']}@"
                 
-            result["MONGO_URI_METRICS"] = f"mongodb://{user_part}{result['METRICS_MONGO_HOST']}:{result['METRICS_MONGO_PORT']}"
+            result["MONGO_URI_METRICS"] = f"mongodb://{user_part}{result['METRICS_MONGO_HOST']}:{result['METRICS_MONGO_PORT']}/?authSource=admin"
 
         if "MONGO_PORT" in result:
             try:
