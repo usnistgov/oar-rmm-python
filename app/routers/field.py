@@ -9,8 +9,8 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.get("records/fields/")
-@router.get("records/fields")
+@router.get("/records/fields/")
+@router.get("/records/fields")
 async def search_fields(request: Request, params: Dict[str, Any] = Depends(validate_search_params)):
     """
     Search fields in the database.
@@ -61,7 +61,7 @@ async def search_fields(request: Request, params: Dict[str, Any] = Depends(valid
         logger.error(f"Error searching fields: {str(e)}")
         raise InternalServerException(str(request.url))
 
-@router.get("records/fields/{field_id}")
+@router.get("/records/fields/{field_id}")
 async def get_field(request: Request, field_id: str):
     """
     Get a single field by ID.

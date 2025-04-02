@@ -20,9 +20,10 @@ init()
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
-
+# Router for `field`` needs to come before `record`` to avoid field queries to get
+# caught in the `record` router
+app.include_router(field.router) 
 app.include_router(record.router)
-app.include_router(field.router)
 app.include_router(paper.router) 
 app.include_router(code.router)
 app.include_router(patent.router)
