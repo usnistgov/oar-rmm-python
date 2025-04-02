@@ -102,7 +102,6 @@ class BaseCRUD:
                 logger.warning(f"Collection {self.collection.name} is empty")
                 raise KeyWordNotFoundException(f"No documents found in {self.collection.name} collection")
 
-            # Execute query with processed parameters - wrap in try/except for more detail
             try:
                 # Using explicit parameters to catch any issues
                 cursor = self.collection.find(

@@ -163,17 +163,37 @@ class ProcessRequest:
 
     def _validate_projections(self) -> None:
         """Validate and process field projections"""
-        if self.include and self.exclude:
-            if self.exclude == "_id":
-                self.projections = {"_id": 0}
+        try:
+            if self.include and self.exclude:
+                if self.exclude == "_id":
+                    # Special case: include specific fields and exclude _id
+                    self.projections = {"_id": 0}
+                    
+                    # Add all included fields with projection 1
+                    for field in self.include.split(","):
+                        if field and field.strip():
+                            self.projections[field.strip()] = 1
+                else:
+                    # Cannot mix include and exclude except for _id
+                    raise IllegalArgumentException("Cannot specify both include and exclude fields except for _id")
+            elif self.include:
+                # Only include fields
+                self.projections = {}
                 for field in self.include.split(","):
-                    self.projections[field] = 1
-            else:
-                raise IllegalArgumentException("Cannot specify both include and exclude fields")
-        elif self.include:
-            self.projections = {field: 1 for field in self.include.split(",")}
-        elif self.exclude:
-            self.projections = {field: 0 for field in self.exclude.split(",")}
+                    if field and field.strip():
+                        self.projections[field.strip()] = 1
+            elif self.exclude:
+                # Only exclude fields
+                self.projections = {}
+                for field in self.exclude.split(","):
+                    if field and field.strip():
+                        self.projections[field.strip()] = 0
+            
+            logger.info(f"Built projection: {self.projections}")
+        except Exception as e:
+            logger.error(f"Error building projections: {e}")
+            # Don't fail the entire request if projection parsing fails
+            self.projections = None
 
     def _update_map(self, key: str, value: str) -> None:
         """Update advanced query map with validation"""
