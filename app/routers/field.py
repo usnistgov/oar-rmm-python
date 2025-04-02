@@ -89,34 +89,34 @@ async def get_field(request: Request, field_id: str):
         logger.error(f"Error retrieving field {field_id}: {str(e)}")
         raise InternalServerException(str(request.url))
 
-@router.post("/fields/")
-async def create_field(request: Request, data: Dict[str, Any] = Body(..., description="Field data to create")):
-    """
-    Create a new field entry.
+# @router.post("/fields/")
+# async def create_field(request: Request, data: Dict[str, Any] = Body(..., description="Field data to create")):
+#     """
+#     Create a new field entry.
     
-    Args:
-        data (Dict[str, Any]): The field data to create
+#     Args:
+#         data (Dict[str, Any]): The field data to create
         
-    Returns:
-        Dict: The newly created field with ID and metadata
+#     Returns:
+#         Dict: The newly created field with ID and metadata
         
-    Raises:
-        IllegalArgumentException: If the field data is invalid
-        InternalServerException: If there is an error processing the request
-    """
-    try:
-        # Validate required fields
-        if not data.get("name"):
-            raise IllegalArgumentException("Field name is required")
+#     Raises:
+#         IllegalArgumentException: If the field data is invalid
+#         InternalServerException: If there is an error processing the request
+#     """
+#     try:
+#         # Validate required fields
+#         if not data.get("name"):
+#             raise IllegalArgumentException("Field name is required")
             
-        if not data.get("type"):
-            raise IllegalArgumentException("Field type is required")
+#         if not data.get("type"):
+#             raise IllegalArgumentException("Field type is required")
             
-        return field_crud.create(data)
+#         return field_crud.create(data)
         
-    except IllegalArgumentException:
-        # Re-raise for consistent error handling
-        raise
-    except Exception as e:
-        logger.error(f"Error creating field: {str(e)}")
-        raise InternalServerException(str(request.url))
+#     except IllegalArgumentException:
+#         # Re-raise for consistent error handling
+#         raise
+#     except Exception as e:
+#         logger.error(f"Error creating field: {str(e)}")
+#         raise InternalServerException(str(request.url))
