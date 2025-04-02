@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     METRICS_MONGO_PORT: int = int(os.getenv("METRICS_MONGO_PORT", "0"))
     
     # Collection names
-    RECORDS_COLLECTION: str = os.getenv("RECORDS_COLLECTION", "records")
+    RECORDS_COLLECTION: str = os.getenv("RECORDS_COLLECTION", "record")
     TAXONOMY_COLLECTION: str = os.getenv("TAXONOMY_COLLECTION", "taxonomy")
     RESOURCES_COLLECTION: str = os.getenv("RESOURCES_COLLECTION", "apis")
     FIELDS_COLLECTION: str = os.getenv("FIELDS_COLLECTION", "fields")

@@ -99,7 +99,12 @@ def create_text_index(collection_name, database=None):
         return False
 
 def create_collection_indexes():
-    """Create indexes for all collections with improved error handling"""
+    """
+    Create indexes for all collections with improved error handling.
+    
+    NOTE: This function is NOT automatically called in production environments.
+    Indexes are managed by an external container in the Docker setup.
+    """
     try:
         success = True
         
@@ -178,5 +183,5 @@ def create_collection_indexes():
 db = connect_db()
 metrics_db = connect_metrics_db()
 
-# Create indexes during startup
-index_result = create_collection_indexes()
+# Don't create indexes automatically - this is handled by another container
+# index_result = create_collection_indexes()
