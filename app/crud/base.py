@@ -83,6 +83,9 @@ class BaseCRUD:
             # Create new request processor instance for each search
             self.request_processor = ProcessRequest()
             
+            # Log collection being searched
+            logger.info(f"Searching collection: {self.collection.name}")
+            
             # Process request parameters
             try:
                 processed = self.request_processor.process_search_params(kwargs)
@@ -94,24 +97,34 @@ class BaseCRUD:
             logger.info(f"Search parameters: {kwargs}")
             logger.info(f"Processed query: {processed}")
 
-            # Execute query with processed parameters
-            cursor = self.collection.find(
-                filter=processed["query"],
-                projection=processed["projection"]
-            )
+            # Check if collection exists and has documents
+            if self.collection.count_documents({}) == 0:
+                logger.warning(f"Collection {self.collection.name} is empty")
+                raise KeyWordNotFoundException(f"No documents found in {self.collection.name} collection")
 
-            if processed["skip"]:
-                cursor = cursor.skip(processed["skip"])
-            
-            if processed["limit"]:
-                cursor = cursor.limit(processed["limit"])
+            # Execute query with processed parameters - wrap in try/except for more detail
+            try:
+                # Using explicit parameters to catch any issues
+                cursor = self.collection.find(
+                    filter=processed["query"],
+                    projection=processed["projection"]
+                )
 
-            if processed["sort"]:
-                cursor = cursor.sort(processed["sort"])
+                if processed["skip"]:
+                    cursor = cursor.skip(processed["skip"])
+                
+                if processed["limit"]:
+                    cursor = cursor.limit(processed["limit"])
 
-            # Get results
-            docs = list(cursor)
-            logger.info(f"Found {len(docs)} documents")
+                if processed["sort"]:
+                    cursor = cursor.sort(processed["sort"])
+
+                # Get results - convert cursor to list to materialize any errors
+                docs = list(cursor)
+                logger.info(f"Found {len(docs)} documents")
+            except Exception as e:
+                logger.error(f"MongoDB query execution error: {e}")
+                raise InternalServerException(f"Error executing MongoDB query: {str(e)}")
             
             if not docs:
                 raise KeyWordNotFoundException("No documents found matching the search criteria")

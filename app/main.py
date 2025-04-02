@@ -188,6 +188,34 @@ def startup_event():
     logger.info(f"Metrics DB: {settings.METRICS_DB_NAME}")
     logger.info("NIST Resource Metadata Management API started successfully!")
 
+
+@app.get("/debug/record-collection")
+async def debug_record_collection():
+    """Debug endpoint to test record collection directly"""
+    from app.database import db
+    from app.config import settings
+    import json
+    
+    try:
+        collection_name = settings.RECORDS_COLLECTION
+        result = {
+            "collection_name": collection_name,
+            "exists": collection_name in db.list_collection_names(),
+            "document_count": db[collection_name].count_documents({}),
+            "collections": db.list_collection_names()
+        }
+        
+        # Get sample document
+        sample = db[collection_name].find_one({})
+        if sample:
+            # Convert ObjectId to string for JSON serialization
+            sample["_id"] = str(sample["_id"])
+            result["sample_document"] = sample
+            
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+    
 @app.get("/", response_class=HTMLResponse)
 async def root():
     try:
