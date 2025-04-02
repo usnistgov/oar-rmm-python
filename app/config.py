@@ -138,7 +138,7 @@ class Settings(BaseSettings):
         # Construct URIs from components
         if "MONGO_HOST" in result and "MONGO_PORT" in result:
             user_part = ""
-            if "MONGO_ADMIN_USER" in result and "MONGO_PASSWORD" in result:
+            if "MONGO_USER" in result and "MONGO_PASSWORD" in result:
                 user_part = f"{result['MONGO_USER']}:{result['MONGO_PASSWORD']}@"
             
             result["MONGO_URI"] = f"mongodb://{user_part}{result['MONGO_HOST']}:{result['MONGO_PORT']}/{result['DB_NAME']}"
