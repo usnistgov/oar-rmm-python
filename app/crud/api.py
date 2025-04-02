@@ -1,5 +1,6 @@
 from typing import Dict, Any
 from app.crud.base import BaseCRUD
+from app.config import settings
 import logging
 
 logger = logging.getLogger(__name__)
@@ -7,7 +8,7 @@ logger = logging.getLogger(__name__)
 class ApiCRUD(BaseCRUD):
     def __init__(self):
         """Initialize APIs collection"""
-        super().__init__("apis")
+        super().__init__(settings.RESOURCES_COLLECTION)
         
     def create(self, data: dict) -> dict:
         """

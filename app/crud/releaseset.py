@@ -1,3 +1,4 @@
+from app.config import settings
 from typing import Dict, Any
 from app.crud.base import BaseCRUD
 import logging
@@ -7,7 +8,7 @@ logger = logging.getLogger(__name__)
 class ReleaseSetCRUD(BaseCRUD):
     def __init__(self):
         """Initialize releasesets collection"""
-        super().__init__("releasesets")
+        super().__init__(settings.RELEASESETS_COLLECTION)
         
     def create(self, data: dict) -> dict:
         """

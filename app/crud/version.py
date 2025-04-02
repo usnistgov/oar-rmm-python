@@ -1,13 +1,13 @@
 from typing import Dict, Any
 from app.crud.base import BaseCRUD
 import logging
-
+from app.config import settings
 logger = logging.getLogger(__name__)
 
 class VersionCRUD(BaseCRUD):
     def __init__(self):
         """Initialize versions collection"""
-        super().__init__("versions")
+        super().__init__(settings.VERSIONS_COLLECTION)
         
     def create(self, data: dict) -> dict:
         """

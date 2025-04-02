@@ -1,4 +1,5 @@
 from app.crud.base import BaseCRUD
+from app.config import settings
 import logging
 
 # Configure logging
@@ -7,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 class RecordCRUD(BaseCRUD):
     def __init__(self):
-        super().__init__("records")
+        super().__init__(settings.RECORDS_COLLECTION)
+        
         
     def create(self, data: dict) -> dict:
         """

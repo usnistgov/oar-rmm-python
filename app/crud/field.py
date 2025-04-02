@@ -1,4 +1,6 @@
 from app.crud.base import BaseCRUD
+from app.config import settings
+
 import logging
 
 # Configure logging
@@ -7,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 class FieldCRUD(BaseCRUD):
     def __init__(self):
-        super().__init__("fields")
+            super().__init__(settings.FIELDS_COLLECTION)
         
     def create(self, data: dict) -> dict:
         """
