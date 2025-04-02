@@ -169,17 +169,6 @@ def startup_event():
         db = connect_db()
         print(f"{Fore.YELLOW}    🗄️  Database:{Style.RESET_ALL} {Fore.GREEN}Connected{Style.RESET_ALL} ({db.name})")
         
-        # Create indexes with resilient error handling
-        try:
-            index_result = create_collection_indexes()
-            if index_result:
-                print(f"{Fore.YELLOW}    📑 Indexes:{Style.RESET_ALL} {Fore.GREEN}Created{Style.RESET_ALL}")
-            else:
-                print(f"{Fore.YELLOW}    📑 Indexes:{Style.RESET_ALL} {Fore.YELLOW}Partially Created{Style.RESET_ALL}")
-        except Exception as e:
-            logger.error(f"Failed to create indexes: {e}")
-            print(f"{Fore.YELLOW}    📑 Indexes:{Style.RESET_ALL} {Fore.RED}Failed{Style.RESET_ALL}")
-            # Log the error but don't terminate the application
     except Exception as e:
         logger.error(f"Failed to connect to database: {e}")
         print(f"{Fore.YELLOW}    🗄️  Database:{Style.RESET_ALL} {Fore.RED}Connection Failed{Style.RESET_ALL}")
@@ -196,7 +185,7 @@ def startup_event():
     logger.info(f"Configuration source: {config_source}")
     logger.info(f"Database: {settings.DB_NAME} at {settings.MONGO_HOST}")
     logger.info(f"Metrics DB: {settings.METRICS_DB_NAME}")
-    logger.info("NIST Resource Metadata Management API started successfully")
+    logger.info("NIST Resource Metadata Management API started successfully!")
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
