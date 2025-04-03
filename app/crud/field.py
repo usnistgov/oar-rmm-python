@@ -71,7 +71,8 @@ class FieldCRUD(BaseCRUD):
         Raises:
             ValueError: If retrieval fails
         """
-        return super().get_all(skip, limit)
+        base_result = super().get_all(skip, limit)
+        return base_result.get("ResultData", [])
         
     def search(self, **kwargs) -> dict:
         """
@@ -101,7 +102,8 @@ class FieldCRUD(BaseCRUD):
         Raises:
             ValueError: If search fails
         """
-        return super().search(**kwargs)
+        base_result = super().search(**kwargs)
+        return base_result.get("ResultData", [])
 
 # Create singleton instance
 field_crud = FieldCRUD()
