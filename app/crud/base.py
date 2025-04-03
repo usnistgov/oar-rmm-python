@@ -129,7 +129,8 @@ class BaseCRUD:
                 raise KeyWordNotFoundException("No documents found matching the search criteria")
                 
             for doc in docs:
-                doc["_id"] = str(doc["_id"])
+                if "_id" in doc:
+                    doc["_id"] = str(doc["_id"])
 
             count = self.collection.count_documents(processed["query"])
             
