@@ -30,6 +30,6 @@ ENV PYTHONPATH /dev/oar-rmm-python/app:/app/dist/oar-rmm-python
 ARG devuser=developer
 USER $devuser
 
-EXPOSE 7000
+EXPOSE 8083
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
