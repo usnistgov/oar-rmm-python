@@ -164,35 +164,43 @@ class ProcessRequest:
     def _validate_projections(self) -> None:
         """Validate and process field projections"""
         try:
+            self.projections = {}
+            
             if self.include and self.exclude:
+                # Special case: include specific fields and exclude _id
                 if self.exclude == "_id":
-                    # Special case: include specific fields and exclude _id
-                    self.projections = {"_id": 0}
+                    # Set _id exclusion explicitly
+                    self.projections["_id"] = 0
                     
-                    # Add all included fields with projection 1
-                    for field in self.include.split(","):
-                        if field and field.strip():
-                            self.projections[field.strip()] = 1
+                    # Add all included fields
+                    if self.include:
+                        fields = [f.strip() for f in self.include.split(",") if f.strip()]
+                        for field in fields:
+                            # Don't include fields with invalid characters
+                            if re.match(r'^[a-zA-Z0-9_.@]+$', field):
+                                self.projections[field] = 1
+                            else:
+                                logger.warning(f"Skipping invalid field name: {field}")
                 else:
-                    # Cannot mix include and exclude except for _id
+                    # MongoDB doesn't allow mixing include and exclude except for _id
                     raise IllegalArgumentException("Cannot specify both include and exclude fields except for _id")
             elif self.include:
-                # Only include fields
-                self.projections = {}
-                for field in self.include.split(","):
-                    if field and field.strip():
-                        self.projections[field.strip()] = 1
+                # Only include specified fields
+                fields = [f.strip() for f in self.include.split(",") if f.strip()]
+                for field in fields:
+                    if re.match(r'^[a-zA-Z0-9_.@]+$', field):
+                        self.projections[field] = 1
             elif self.exclude:
-                # Only exclude fields
-                self.projections = {}
-                for field in self.exclude.split(","):
-                    if field and field.strip():
-                        self.projections[field.strip()] = 0
-            
+                # Only exclude specified fields
+                fields = [f.strip() for f in self.exclude.split(",") if f.strip()]
+                for field in fields:
+                    if re.match(r'^[a-zA-Z0-9_.@]+$', field):
+                        self.projections[field] = 0
+                    
             logger.info(f"Built projection: {self.projections}")
         except Exception as e:
             logger.error(f"Error building projections: {e}")
-            # Don't fail the entire request if projection parsing fails
+            # Fall back to returning all fields
             self.projections = None
 
     def _update_map(self, key: str, value: str) -> None:
