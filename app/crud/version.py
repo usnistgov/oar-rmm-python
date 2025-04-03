@@ -1,8 +1,5 @@
-from typing import Dict, Any
-from app.crud.base import BaseCRUD
-import logging
 from app.config import settings
-logger = logging.getLogger(__name__)
+from app.crud.base import BaseCRUD
 
 class VersionCRUD(BaseCRUD):
     def __init__(self):
@@ -10,40 +7,18 @@ class VersionCRUD(BaseCRUD):
         super().__init__(settings.VERSIONS_COLLECTION)
         
     def create(self, data: dict) -> dict:
-        """
-        Create a new version entry in the database.
-        
-        Args:
-            data (dict): The version data to create
-            
-        Returns:
-            dict: The newly created version with metrics
-        """
+        """Create a new version entry in the database."""
         return super().create(data)
 
     def get(self, version_id: str) -> dict:
-        """
-        Get a single version entry by ID.
+        """Get a single version entry by ID."""
+        base_result = super().get(version_id)
+        return base_result.get("ResultData", [{}])[0]  # Return just the document
         
-        Args:
-            version_id (str): The ID of the version to retrieve
-            
-        Returns:
-            dict: The version data with metrics
-        """
-        return super().get(version_id)
-        
-    def search(self, **kwargs) -> dict:
-        """
-        Search versions based on parameters.
-        
-        Args:
-            **kwargs: Search parameters
-            
-        Returns:
-            dict: Search results with metrics
-        """
-        return super().search(**kwargs)
+    def search(self, **kwargs) -> list:
+        """Search versions based on parameters."""
+        base_result = super().search(**kwargs)
+        return base_result.get("ResultData", [])  # Return just the list of documents
 
-# Create a singleton instance
+# Create singleton instance
 version_crud = VersionCRUD()

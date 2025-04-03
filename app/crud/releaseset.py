@@ -1,50 +1,24 @@
 from app.config import settings
-from typing import Dict, Any
 from app.crud.base import BaseCRUD
-import logging
-
-logger = logging.getLogger(__name__)
 
 class ReleaseSetCRUD(BaseCRUD):
     def __init__(self):
-        """Initialize releasesets collection"""
+        """Initialize release set collection"""
         super().__init__(settings.RELEASESETS_COLLECTION)
         
     def create(self, data: dict) -> dict:
-        """
-        Create a new release set entry in the database.
-        
-        Args:
-            data (dict): The release set data to create
-            
-        Returns:
-            dict: The newly created release set with metrics
-        """
+        """Create a new release set entry in the database."""
         return super().create(data)
 
     def get(self, releaseset_id: str) -> dict:
-        """
-        Get a single release set entry by ID.
+        """Get a single release set entry by ID."""
+        base_result = super().get(releaseset_id)
+        return base_result.get("ResultData", [{}])[0]  # Return just the document
         
-        Args:
-            releaseset_id (str): The ID of the release set to retrieve
-            
-        Returns:
-            dict: The release set data with metrics
-        """
-        return super().get(releaseset_id)
-        
-    def search(self, **kwargs) -> dict:
-        """
-        Search release sets based on parameters.
-        
-        Args:
-            **kwargs: Search parameters
-            
-        Returns:
-            dict: Search results with metrics
-        """
-        return super().search(**kwargs)
+    def search(self, **kwargs) -> list:
+        """Search release sets based on parameters."""
+        base_result = super().search(**kwargs)
+        return base_result.get("ResultData", [])  # Return just the list of documents
 
-# Create a singleton instance
+# Create singleton instance
 releaseset_crud = ReleaseSetCRUD()

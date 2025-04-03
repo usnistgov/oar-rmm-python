@@ -11,40 +11,18 @@ class TaxonomyCRUD(BaseCRUD):
         super().__init__(settings.TAXONOMY_COLLECTION)
         
     def create(self, data: dict) -> dict:
-        """
-        Create a new taxonomy entry in the database.
-        
-        Args:
-            data (dict): The taxonomy data to create
-            
-        Returns:
-            dict: The newly created taxonomy with metrics
-        """
+        """Create a new taxonomy entry in the database."""
         return super().create(data)
 
     def get(self, taxonomy_id: str) -> dict:
-        """
-        Get a single taxonomy entry by ID.
+        """Get a single taxonomy entry by ID."""
+        base_result = super().get(taxonomy_id)
+        return base_result.get("ResultData", [{}])[0]  # Return just the document
         
-        Args:
-            taxonomy_id (str): The ID of the taxonomy to retrieve
-            
-        Returns:
-            dict: The taxonomy data with metrics
-        """
-        return super().get(taxonomy_id)
-        
-    def search(self, **kwargs) -> dict:
-        """
-        Search taxonomies based on parameters.
-        
-        Args:
-            **kwargs: Search parameters
-            
-        Returns:
-            dict: Search results with metrics
-        """
-        return super().search(**kwargs)
+    def search(self, **kwargs) -> list:
+        """Search taxonomies based on parameters."""
+        base_result = super().search(**kwargs)
+        return base_result.get("ResultData", [])  # Return just the list of documents
 
 # Create a singleton instance
 taxonomy_crud = TaxonomyCRUD()
