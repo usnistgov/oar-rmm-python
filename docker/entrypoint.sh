@@ -1,6 +1,6 @@
 #! /bin/bash
 #
-port=8000
+port=7000
 app_module="app.main:app"
 # script=/dev/oar-fm-application-api/python/fm-application-api/run.py
 # [ -f "$script" ] || script=/app/dist/fm-application-api/bin/run.py

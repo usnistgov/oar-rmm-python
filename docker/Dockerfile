@@ -30,7 +30,6 @@ ENV PYTHONPATH /dev/oar-rmm-python/app:/app/dist/oar-rmm-python
 ARG devuser=developer
 USER $devuser
 
-# FastAPI default is 8000
-EXPOSE 8000
+EXPOSE 7000
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

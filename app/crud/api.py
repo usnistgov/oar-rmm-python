@@ -10,17 +10,17 @@ class ApiCRUD(BaseCRUD):
         """Initialize APIs collection"""
         super().__init__(settings.RESOURCES_COLLECTION)
         
-    def create(self, data: dict) -> dict:
-        """
-        Create a new API entry in the database.
+    # def create(self, data: dict) -> dict:
+    #     """
+    #     Create a new API entry in the database.
         
-        Args:
-            data (dict): The API data to create
+    #     Args:
+    #         data (dict): The API data to create
             
-        Returns:
-            dict: The newly created API with metrics
-        """
-        return super().create(data)
+    #     Returns:
+    #         dict: The newly created API with metrics
+    #     """
+    #     return super().create(data)
 
     def get(self, api_id: str) -> dict:
         """
