@@ -34,5 +34,14 @@ async def search_records(reqest: Request, params: Dict[str, Any] = Depends(valid
 #     return record_crud.create(data)
 
 @router.get("/records/{record_id}")
-async def get_record(reqest: Request, record_id: str):
+async def get_record(request: Request, record_id: str):
+    """
+    Get a record by ID or EDIID.
+    
+    Args:
+        record_id: Either a MongoDB ID or an EDIID
+        
+    Returns:
+        dict: The record data without wrapper
+    """
     return record_crud.get(record_id)
