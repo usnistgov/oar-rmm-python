@@ -146,7 +146,7 @@ class Settings(BaseSettings):
         
         if "METRICS_MONGO_HOST" in result and "METRICS_MONGO_PORT" in result:
             user_part = ""
-            if "METRICS_MONGO_USER" in result and "METRICS_MONGO_PASSWORD" in result:
+            if "MONGO_USER" in result and "MONGO_PASSWORD" in result:
                 user_part = f"{result['MONGO_USER']}:{result['MONGO_PASSWORD']}@"
                 
             result["MONGO_URI_METRICS"] = f"mongodb://{user_part}{result['METRICS_MONGO_HOST']}:{result['METRICS_MONGO_PORT']}/{result['METRICS_DB_NAME']}"
