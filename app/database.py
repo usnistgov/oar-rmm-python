@@ -60,26 +60,38 @@ def connect_metrics_db():
     """Connect to metrics MongoDB and return the database instance"""
     global metrics_client, metrics_db
     
-    try:
-        # Use metrics URI if provided, otherwise fall back to main URI
-        metrics_uri = settings.MONGO_URI_METRICS or settings.MONGO_URI
-        metrics_db_name = settings.METRICS_DB_NAME
-        
-        # Use the same client if connecting to the same server
-        if metrics_uri == settings.MONGO_URI and client:
-            metrics_client = client
-            metrics_db = client[metrics_db_name]
-        else:
-            metrics_client = MongoClient(metrics_uri)
-            metrics_db = metrics_client[metrics_db_name]
+    retry_count = 3
+    for attempt in range(retry_count):
+        try:
+            # Use metrics URI if provided, otherwise fall back to main URI
+            metrics_uri = settings.MONGO_URI_METRICS or settings.MONGO_URI
+            metrics_db_name = settings.METRICS_DB_NAME
             
-        # Test the connection
-        metrics_client.admin.command('ping')
-        logger.info(f"Connected to Metrics MongoDB: {metrics_db_name}")
-        return metrics_db
-    except Exception as e:
-        logger.error(f"Failed to connect to Metrics MongoDB: {e}")
-        raise InternalServerException(f"Metrics database connection error: {str(e)}")
+            logger.info(f"Connecting to Metrics MongoDB: {metrics_uri}")
+            logger.info(f"Metrics database name: {metrics_db_name}")
+            
+            # Use the same client if connecting to the same server
+            if metrics_uri == settings.MONGO_URI and client:
+                metrics_client = client
+                metrics_db = client[metrics_db_name]
+            else:
+                metrics_client = MongoClient(metrics_uri)
+                metrics_db = metrics_client[metrics_db_name]
+                
+            # Test the connection
+            metrics_client.admin.command('ping')
+            logger.info(f"Connected to Metrics MongoDB: {metrics_db_name}")
+            return metrics_db
+        except Exception as e:
+            logger.error(f"Failed to connect to Metrics MongoDB (attempt {attempt+1}/{retry_count}): {e}")
+            if attempt < retry_count - 1:
+                logger.info(f"Retrying metrics connection in 2 seconds...")
+                time.sleep(2)
+            else:
+                # Don't raise an exception - just log the error and return None
+                # This way the API can still function even if metrics aren't available
+                logger.warning(f"Metrics database unavailable. Continuing without metrics support.")
+                return None
 
 def create_text_index(collection_name, database=None):
     """Create text index for a collection with error handling"""
