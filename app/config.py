@@ -16,6 +16,7 @@ load_dotenv(dotenv_path=dotenv_path)
 
 class Settings(BaseSettings):
     CONFIG_SOURCE: str = "local"
+    ROOT_PATH: str = os.getenv("ROOT_PATH", "/rmm")
     # Main database settings
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     DB_NAME: str = os.getenv("DB_NAME", "oar-rmm")
