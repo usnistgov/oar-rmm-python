@@ -193,13 +193,19 @@ class MetricsCRUD:
         }
     
     def get_repo_metrics(self):
-        """Get repository-level metrics"""
+        """Get repository-level metrics directly from the database"""
+        # Get all repository metrics sorted by date (descending)
         results = list(self.repo_metrics.find(
             {}, 
-            {"_id": 0, "year": 1, "month": 1, "downloads": 1, "unique_users": 1}
-        ).sort([("year", DESCENDING), ("month", DESCENDING)]))
+            {"_id": 0, "ip_list": 0}  # Exclude sensitive fields
+        ).sort([("timestamp", DESCENDING)]))
         
-        return {"metrics": results}
+        # Return in the expected format
+        return {
+            "RepoMetricsCount": len(results),
+            "PageSize": 0,  # Since we're returning all metrics
+            "RepoMetrics": results
+        }
     
     def get_total_unique_users(self):
         """Get total unique users count"""
@@ -235,18 +241,18 @@ class MetricsCRUD:
             ]
         }
 
-    def get_file_metrics_list(self, page=1, size=10, sort_by="downloads", sort_order=-1):
-        """Get metrics for a list of files with pagination and sorting"""
+    def get_file_metrics_list(self, sort_by="downloads", sort_order=-1):
+        """Get metrics for all files with sorting"""
         # Determine sort field
         sort_field = "success_get" if sort_by == "downloads" else "filepath"
         
-        # Get paginated results
+        # Get all results with sorting
         results = list(self.file_metrics.find(
             {},
             {"_id": 0, "pdrid": 1, "ediid": 1, "filepath": 1, "downloadURL": 1, 
             "success_get": 1, "failure_get": 1, "datacart_or_client": 1,
             "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
-        ).sort(sort_field, sort_order).skip((page - 1) * size).limit(size))
+        ).sort(sort_field, sort_order))
         
         # Format results
         files_metrics = []
@@ -264,12 +270,12 @@ class MetricsCRUD:
                 "last_time_logged": result.get("last_time_logged")
             })
         
-        # Get total count for pagination
-        total = self.file_metrics.count_documents({})
+        # Get total count of files
+        total = len(files_metrics)
         
         return {
             "FilesMetricsCount": total,
-            "PageSize": size,
+            "PageSize": 0,  # 0 indicates all results are returned
             "FilesMetrics": files_metrics
         }
 

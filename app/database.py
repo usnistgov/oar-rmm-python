@@ -91,7 +91,7 @@ def connect_metrics_db():
                 # Don't raise an exception - just log the error and return None
                 # This way the API can still function even if metrics aren't available
                 logger.warning(f"Metrics database unavailable. Continuing without metrics support.")
-                return None
+                return None 
 
 def create_text_index(collection_name, database=None):
     """Create text index for a collection with error handling"""
