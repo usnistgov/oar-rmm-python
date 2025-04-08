@@ -9,7 +9,7 @@ class MetricsCRUD:
     def __init__(self):
         """Initialize metrics collections"""
         # Use the original metrics collection
-        self.metrics = metrics_db.metrics
+        self.metrics = metrics_db.recordMetrics
         self.file_metrics = metrics_db.fileMetrics
         self.repo_metrics = metrics_db.repoMetrics
         self.unique_users = metrics_db.uniqueUsers
