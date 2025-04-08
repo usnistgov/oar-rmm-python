@@ -159,13 +159,13 @@ class MetricsCRUD:
     def get_record_metrics_list(self, page=1, size=10, sort_by="downloads", sort_order=-1):
         """Get metrics for a list of records"""
         # Determine sort field
-        sort_field = "download_count" if sort_by == "downloads" else "unique_users"
+        sort_field = "download_count" if sort_by == "total_size_download" else "number_users"
         
         # Get paginated results
         results = list(self.metrics.find(
             {},
-            {"_id": 0, "pdrid": 1, "ediid": 1, "download_count": 1, 
-            "unique_users": 1, "first_time_logged": 1, "last_time_logged": 1,
+            {"_id": 0, "pdrid": 1, "ediid": 1, "total_size_download": 1, 
+            "number_users": 1, "first_time_logged": 1, "last_time_logged": 1,
             "total_download_size": 1}
         ).sort(sort_field, sort_order).skip((page - 1) * size).limit(size))
         
@@ -177,10 +177,10 @@ class MetricsCRUD:
                 "ediid": result.get("ediid"),
                 "first_time_logged": result.get("first_time_logged"),
                 "last_time_logged": result.get("last_time_logged"),
-                "total_size_download": result.get("total_download_size", 0),
+                "total_size_download": result.get("total_size_download", 0),
                 "success_get": result.get("download_count", 0),
-                "number_users": result.get("unique_users", 0),
-                "record_download": result.get("download_count", 0)
+                "number_users": result.get("number_users", 0),
+                "record_download": result.get("record_download", 0)
             })
         
         # Get total count for pagination
@@ -244,7 +244,7 @@ class MetricsCRUD:
     def get_file_metrics_list(self, sort_by="downloads", sort_order=-1):
         """Get metrics for all files with sorting"""
         # Determine sort field
-        sort_field = "success_get" if sort_by == "downloads" else "filepath"
+        sort_field = "success_get" if sort_by == "total_size_download" else "filepath"
         
         # Get all results with sorting
         results = list(self.file_metrics.find(
