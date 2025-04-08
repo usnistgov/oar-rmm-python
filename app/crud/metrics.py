@@ -148,10 +148,10 @@ class MetricsCRUD:
                     "ediid": result.get("ediid"),
                     "first_time_logged": result.get("first_time_logged"),
                     "last_time_logged": result.get("last_time_logged"),
-                    "total_size_download": result.get("total_download_size", 0),
+                    "total_size_download": result.get("total_size_download", 0),
                     "success_get": result.get("download_count", 0),
-                    "number_users": result.get("unique_users", 0),
-                    "record_download": result.get("download_count", 0)
+                    "number_users": result.get("number_users", 0),
+                    "record_download": result.get("record_download", 0)
                 }
             ]
         }
