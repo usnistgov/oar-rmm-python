@@ -156,7 +156,7 @@ class MetricsCRUD:
             ]
         }
     
-    def get_record_metrics_list(self, page=1, size=10, sort_by="downloads", sort_order=-1):
+    def get_record_metrics_list(self, page=1, size=10, sort_by="total_size_download", sort_order=-1):
         """Get metrics for a list of records"""
         # Determine sort field
         sort_field = "download_count" if sort_by == "total_size_download" else "number_users"
@@ -241,7 +241,7 @@ class MetricsCRUD:
             ]
         }
 
-    def get_file_metrics_list(self, sort_by="total_size_download", sort_order=-1):
+    def get_file_metrics_list(self, page=1, size=10, sort_by="total_size_download", sort_order=-1):
         """Get metrics for all files with sorting"""
         # Determine sort field
         sort_field = "success_get" if sort_by == "total_size_download" else "filepath"
@@ -252,7 +252,7 @@ class MetricsCRUD:
             {"_id": 0, "pdrid": 1, "ediid": 1, "filepath": 1, "downloadURL": 1, 
             "success_get": 1, "failure_get": 1, "datacart_or_client": 1,
             "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
-        ).sort(sort_field, sort_order))
+        ).sort(sort_field, sort_order).skip((page - 1) * size).limit(size))
         
         # Format results
         files_metrics = []
