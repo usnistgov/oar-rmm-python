@@ -246,6 +246,32 @@ class MetricsCRUD:
                     "last_time_logged": result.get("last_time_logged")
                 }
             ]
+
+
+            # Format results
+        files_metrics = []
+        for result in results:
+            files_metrics.append({
+                "pdrid": result.get("pdrid"),
+                "ediid": result.get("ediid"),
+                "filepath": result.get("filepath"),
+                "downloadURL": result.get("downloadURL"),
+                "success_get": result.get("success_get", 0),
+                "failure_get": result.get("failure_get", 0),
+                "datacart_or_client": result.get("datacart_or_client", 0),
+                "total_size_download": result.get("total_size_download", 0),
+                "first_time_logged": result.get("first_time_logged"),
+                "last_time_logged": result.get("last_time_logged")
+            })
+        
+        # Get total count of files
+        total = len(files_metrics)
+        
+        return {
+            "FilesMetricsCount": total,
+            "PageSize": 0,  # 0 indicates all results are returned
+            "FilesMetrics": files_metrics
+        }
         }
 
     def get_file_metrics_list(self, page=1, size=10, sort_by="total_size_download", sort_order=-1):
