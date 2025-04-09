@@ -72,7 +72,7 @@ async def get_file_metrics(file_path: str = Path(..., description="File path to 
     print("TESTING HERE 1",file_id)
     print("TESTING HERE 2",record_id)
     
-    metrics = metrics_crud.get_file_metrics(file_path, record_id)
+    metrics = metrics_crud.get_file_metrics(file_id, record_id)
     if not metrics:
         raise HTTPException(status_code=404, detail=f"Metrics for file {file_path} not found")
     return metrics
