@@ -218,7 +218,7 @@ class MetricsCRUD:
     def get_file_metrics(self, file_path, recordid):
         """Get metrics for a specific file"""
         result = {}
-        if not filepath:
+        if not file_path:
             result = self.file_metrics.find_one({"ediid": recordid})
         else:
             result = self.file_metrics.find_one({"filepath": file_path})
