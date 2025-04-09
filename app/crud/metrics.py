@@ -215,9 +215,14 @@ class MetricsCRUD:
         
         return {"unique_users": len(all_users)}
     
-    def get_file_metrics(self, file_path):
+    def get_file_metrics(self, file_path, recordid):
         """Get metrics for a specific file"""
-        result = self.file_metrics.find_one({"filepath": file_path})
+        result = {}
+        if not filepath:
+            result = self.file_metrics.find_one({"ediid": recordid})
+        else:
+            result = self.file_metrics.find_one({"filepath": file_path})
+        
         if not result:
             return None
         
