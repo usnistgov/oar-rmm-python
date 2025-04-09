@@ -241,7 +241,7 @@ class MetricsCRUD:
             ]
         }
 
-    def get_file_metrics_list(self, sort_by="downloads", sort_order=-1):
+    def get_file_metrics_list(self, sort_by="total_size_download", sort_order=-1):
         """Get metrics for all files with sorting"""
         # Determine sort field
         sort_field = "success_get" if sort_by == "total_size_download" else "filepath"
