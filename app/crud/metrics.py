@@ -219,8 +219,10 @@ class MetricsCRUD:
         """Get metrics for a specific file"""
         result = {}
         if not file_path:
+            print("FILEPTAH is EMPTY")
             result = self.file_metrics.find_one({"ediid": recordid})
         else:
+            print("FILEPATH ", file_path)
             result = self.file_metrics.find_one({"filepath": file_path})
         
         if not result:
