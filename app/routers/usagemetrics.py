@@ -62,8 +62,8 @@ async def get_file_metrics(file_path: str = Path(..., description="File path to 
         if len(parts) >= 3:
             record_id = f"{parts[0]}/{parts[1]}/{parts[2]}"
             file_id = ""
-    # Process paths like /recordid/filename.ext
-     elif "/" in file_path:
+    #Process paths like /recordid/filename.ext
+    elif "/" in file_path:
         parts = file_path.split("/")
         if len(parts) >= 2:
             record_id = parts[0]
