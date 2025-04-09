@@ -53,12 +53,24 @@ async def get_file_metrics(file_path: str = Path(..., description="File path to 
     record_id = ""
     file_id = file_path
     
+    record_id = ""
+    file_id = file_path
+    print("*****",file_path)
+    if "ark:" in file_path:
+        # Process ARK ID format
+        parts = file_path.split("/")
+        if len(parts) >= 3:
+            record_id = f"{parts[0]}/{parts[1]}/{parts[2]}"
+            file_id = ""
     # Process paths like /recordid/filename.ext
-    if "/" in file_path:
+    else  if "/" in file_path:
         parts = file_path.split("/")
         if len(parts) >= 2:
             record_id = parts[0]
             file_id = "/".join(parts[1:])
+    
+    print("TESTING HERE 1",file_id)
+    print("TESTING HERE 2",record_id)
     
     metrics = metrics_crud.get_file_metrics(file_path, record_id)
     if not metrics:
