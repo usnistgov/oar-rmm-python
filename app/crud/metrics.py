@@ -2,6 +2,7 @@ from datetime import datetime
 from app.database import db, metrics_db
 from pymongo import ASCENDING, DESCENDING
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +14,12 @@ class MetricsCRUD:
         self.file_metrics = metrics_db.fileMetrics
         self.repo_metrics = metrics_db.repoMetrics
         self.unique_users = metrics_db.uniqueUsers
+
+    def _sanitize_float_for_json(self, value, default_if_non_finite=0):
+        """Sanitizes float values that are not JSON compliant (NaN, inf, -inf)."""
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return default_if_non_finite
+        return value
         
     def record_download(self, pdrid, ediid, ip_address, user_agent="", referrer="", 
                       timestamp=None, download_size=0):
@@ -148,10 +155,10 @@ class MetricsCRUD:
                     "ediid": result.get("ediid"),
                     "first_time_logged": result.get("first_time_logged"),
                     "last_time_logged": result.get("last_time_logged"),
-                    "total_size_download": result.get("total_size_download", 0),
-                    "success_get": result.get("download_count", 0),
-                    "number_users": result.get("number_users", 0),
-                    "record_download": result.get("record_download", 0)
+                    "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
+                    "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
+                    "number_users": self._sanitize_float_for_json(result.get("unique_users", 0)), 
+                    "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
                 }
             ]
         }
@@ -159,15 +166,30 @@ class MetricsCRUD:
     def get_record_metrics_list(self, page=1, size=10, sort_by="total_size_download", sort_order=-1):
         """Get metrics for a list of records"""
         # Determine sort field
-        sort_field = "download_count" if sort_by == "total_size_download" else "number_users"
+        if sort_by == "total_size_download":
+            sort_field_db = "total_download_size"
+        elif sort_by == "users":
+            sort_field_db = "unique_users"
+        else: # Default or other sort fields
+            sort_field_db = "download_count" 
+
+        mongo_sort_order = DESCENDING if sort_order == -1 or str(sort_order).lower() == "desc" else ASCENDING
         
-        # Get paginated results
+        # Ensure projection includes all necessary fields from DB
+        projection = {
+            "_id": 0, "pdrid": 1, "ediid": 1, 
+            "total_download_size": 1, 
+            "unique_users": 1,        
+            "download_count": 1,     
+            "first_time_logged": 1, 
+            "last_time_logged": 1,
+            "record_download": 1     
+        }
+        
         results = list(self.metrics.find(
             {},
-            {"_id": 0, "pdrid": 1, "ediid": 1, "total_size_download": 1, 
-            "number_users": 1, "first_time_logged": 1, "last_time_logged": 1,
-            "total_download_size": 1}
-        ).sort(sort_field, sort_order).skip((page - 1) * size).limit(size))
+            projection
+        ).sort(sort_field_db, mongo_sort_order).skip((page - 1) * size).limit(size))
         
         # Format results
         dataset_metrics = []
@@ -177,10 +199,10 @@ class MetricsCRUD:
                 "ediid": result.get("ediid"),
                 "first_time_logged": result.get("first_time_logged"),
                 "last_time_logged": result.get("last_time_logged"),
-                "total_size_download": result.get("total_size_download", 0),
-                "success_get": result.get("download_count", 0),
-                "number_users": result.get("number_users", 0),
-                "record_download": result.get("record_download", 0)
+                "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
+                "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
+                "number_users": self._sanitize_float_for_json(result.get("unique_users", 0)),
+                "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
             })
         
         # Get total count for pagination
@@ -193,17 +215,25 @@ class MetricsCRUD:
         }
     
     def get_repo_metrics(self):
-        """Get repository-level metrics directly from the database"""
-        # Get all repository metrics sorted by date (descending)
-        results = list(self.repo_metrics.find(
-            {}, 
-            {"_id": 0, "ip_list": 0}  # Exclude sensitive fields
-        ).sort([("timestamp", DESCENDING)]))
-        
-        # Return in the expected format
+        """Get repository‐level metrics directly from the database"""
+        results = list(self.repo_metrics
+            .find({}, {"_id": 0, "ip_list": 0})
+            .sort([("timestamp", DESCENDING)])
+        )
+
+        def sanitize(v, default=0):
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                return default
+            return v or default
+
+        # sanitize every numeric field before returning
+        for doc in results:
+            doc["downloads"]     = sanitize(doc.get("downloads"))
+            doc["unique_users"]  = sanitize(doc.get("unique_users"))
+
         return {
             "RepoMetricsCount": len(results),
-            "PageSize": 0,  # Since we're returning all metrics
+            "PageSize": 0,
             "RepoMetrics": results
         }
     
@@ -246,35 +276,10 @@ class MetricsCRUD:
                     "last_time_logged": result.get("last_time_logged")
                 }
             ]
-
-
-            # Format results
-        files_metrics = []
-        for result in results:
-            files_metrics.append({
-                "pdrid": result.get("pdrid"),
-                "ediid": result.get("ediid"),
-                "filepath": result.get("filepath"),
-                "downloadURL": result.get("downloadURL"),
-                "success_get": result.get("success_get", 0),
-                "failure_get": result.get("failure_get", 0),
-                "datacart_or_client": result.get("datacart_or_client", 0),
-                "total_size_download": result.get("total_size_download", 0),
-                "first_time_logged": result.get("first_time_logged"),
-                "last_time_logged": result.get("last_time_logged")
-            })
-        
-        # Get total count of files
-        total = len(files_metrics)
-        
-        return {
-            "FilesMetricsCount": total,
-            "PageSize": 0,  # 0 indicates all results are returned
-            "FilesMetrics": files_metrics
-        }
         }
 
-    def get_file_metrics_list(self, page=1, size=10, sort_by="total_size_download", sort_order=-1):
+    
+    def get_file_metrics_list(self, sort_by="total_size_download", sort_order=-1):
         """Get metrics for all files with sorting"""
         # Determine sort field
         sort_field = "success_get" if sort_by == "total_size_download" else "filepath"
@@ -285,31 +290,38 @@ class MetricsCRUD:
             {"_id": 0, "pdrid": 1, "ediid": 1, "filepath": 1, "downloadURL": 1, 
             "success_get": 1, "failure_get": 1, "datacart_or_client": 1,
             "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
-        ).sort(sort_field, sort_order).skip((page - 1) * size).limit(size))
+        ).sort(sort_field, sort_order))
         
-        # Format results
+        # Format results with sanitization
         files_metrics = []
         for result in results:
+            # Sanitize numeric values
+            def sanitize_number(value, default=0):
+                if isinstance(value, (int, float)):
+                    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                        return default
+                return value or default
+                
             files_metrics.append({
                 "pdrid": result.get("pdrid"),
                 "ediid": result.get("ediid"),
                 "filepath": result.get("filepath"),
                 "downloadURL": result.get("downloadURL"),
-                "success_get": result.get("success_get", 0),
-                "failure_get": result.get("failure_get", 0),
-                "datacart_or_client": result.get("datacart_or_client", 0),
-                "total_size_download": result.get("total_size_download", 0),
+                "success_get": sanitize_number(result.get("success_get")),
+                "failure_get": sanitize_number(result.get("failure_get")),
+                "datacart_or_client": sanitize_number(result.get("datacart_or_client")),
+                "total_size_download": sanitize_number(result.get("total_size_download")),
                 "first_time_logged": result.get("first_time_logged"),
                 "last_time_logged": result.get("last_time_logged")
             })
         
-        # Get total count of files
         total = len(files_metrics)
         
         return {
             "FilesMetricsCount": total,
-            "PageSize": 0,  # 0 indicates all results are returned
+            "PageSize": 0,
             "FilesMetrics": files_metrics
         }
 
 metrics_crud = MetricsCRUD()
+
