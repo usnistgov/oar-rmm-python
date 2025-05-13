@@ -13,23 +13,9 @@ class BaseCRUD:
         self.collection = db[collection_name]
         self.request_processor = ProcessRequest()
 
-    def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new document"""
-        try:
-            result = self.collection.insert_one(data)
-            new_doc = self.collection.find_one({"_id": result.inserted_id})
-            new_doc["_id"] = str(new_doc["_id"])
-            return {
-                "ResultData": [new_doc],
-                "ResultCount": 1,
-                "Metrics": {"ElapsedTime": 0}
-            }
-        except Exception as e:
-            logger.error(f"Failed to create document: {e}")
-            raise InternalServerException(f"Failed to create document: {str(e)}")
-
     def get(self, doc_id: str) -> Dict[str, Any]:
         """Get a single document by ID"""
+        print(f"Getting document with ID: {doc_id}")
         start_time = time.time()
         try:
             doc = self.collection.find_one({"_id": ObjectId(doc_id)})
@@ -52,7 +38,7 @@ class BaseCRUD:
         """Get all documents with optional filtering"""
         start_time = time.time()
         try:
-            cursor = self.collection.find(filters).skip(skip).limit(limit)
+            cursor = self.collection.find(filters, projection={"_id": 0}).skip(skip).limit(limit)
             docs = list(cursor)
             
             if not docs:
@@ -89,6 +75,10 @@ class BaseCRUD:
             # Process request parameters
             try:
                 processed = self.request_processor.process_search_params(kwargs)
+                # Ensure _id is excluded from projection
+                if "projection" not in processed:
+                    processed["projection"] = {}
+                processed["projection"]["_id"] = 0
             except Exception as e:
                 # If there's an error processing the search parameters, it's likely an illegal argument
                 logger.error(f"Error processing search parameters: {e}")

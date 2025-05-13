@@ -141,7 +141,13 @@ class MetricsCRUD:
     
     def get_record_metrics(self, record_id):
         """Get metrics for a specific record"""
-        result = self.metrics.find_one({"$or": [{"pdrid": record_id}, {"ediid": record_id}]})
+        result = self.metrics.find_one({
+        "$or": [
+            {"pdrid": record_id}, 
+            {"ediid": record_id},
+            {"@id": record_id}
+        ]
+        })
         if not result:
             return None
         
