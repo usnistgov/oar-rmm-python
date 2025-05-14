@@ -38,14 +38,15 @@ class BaseCRUD:
         """Get all documents with optional filtering"""
         start_time = time.time()
         try:
-            cursor = self.collection.find(filters, projection={"_id": 0}).skip(skip).limit(limit)
+            cursor = self.collection.find(
+                filter=filters,
+                projection={"_id": 0}
+            ).skip(skip).limit(limit)
+            
             docs = list(cursor)
             
             if not docs:
                 raise KeyWordNotFoundException("No documents found matching the criteria")
-                
-            for doc in docs:
-                doc["_id"] = str(doc["_id"])
             
             count = self.collection.count_documents(filters)
             
