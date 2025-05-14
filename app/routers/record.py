@@ -29,14 +29,12 @@ async def search_records(reqest: Request, params: Dict[str, Any] = Depends(valid
     return record_crud.search(**params)
 
 
-# @router.post("/records/")
-# async def create_record(data: Dict[str, Any]):
-#     return record_crud.create(data)
-
-@router.get("/records/{record_id}")
+@router.get("/records/{record_id:path}")
 async def get_record(request: Request, record_id: str):
     """
-    Get a record by ID or EDIID.
+    Get a record by ID or EDIID or ARK identifier.
+    The :path converter allows for slashes and special characters in the record_id
+
     
     Args:
         record_id: Either a MongoDB ID or an EDIID

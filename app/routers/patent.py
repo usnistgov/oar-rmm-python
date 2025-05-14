@@ -40,13 +40,6 @@ async def search_patents(
         
     return patent_crud.search(**search_params)
 
-# @router.post("/patents/")
-# async def create_patent(
-#     data: Dict[str, Any] = Body(..., description="Patent data to create")
-# ):
-#     """Create a new patent entry"""
-#     return patent_crud.create(data)
-
 @router.get("/patents/{patent_id}")
 async def get_patent(patent_id: str):
     """Get a patent by ID or patent number"""

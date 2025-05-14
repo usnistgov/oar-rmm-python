@@ -187,45 +187,84 @@ class ProcessRequest:
         if '\x00' in value:
             raise IllegalArgumentException(f"Invalid character in {key}: null bytes are not allowed")
         
-        # Regular update logic
+        # Special handling for logical operators
         if key == "logicalOp":
             if value.lower() not in ["and", "or", "not"]:
                 raise IllegalArgumentException(f"Invalid logical operator: {value}")
             self.logical_ops.append(value)
-        else:
-            if key not in self.adv_map:
-                self.adv_map[key] = []
-            self.adv_map[key].append(value)
+            return
+            
+        # Handle comma-separated values as OR conditions
+        if ',' in value and not (value.startswith('"') and value.endswith('"')):
+            # Split by comma and strip whitespace
+            values = [val.strip() for val in value.split(',')]
+            
+            # Create a MongoDB $in query for this field
+            parts = key.split('.')
+            current = self.adv_map
+            
+            # Navigate to the nested field location
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            
+            # Set the $in operator for the field
+            current[parts[-1]] = {"$in": values}
+            return
+            
+        # Regular non-comma values - handle dot notation
+        parts = key.split('.')
+        current = self.adv_map
+        
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        
+        # Just set the value directly, don't do additional append
+        current[parts[-1]] = value
 
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
         search_conditions = []
         
-        # Create a condition for each field-value pair
-        for key, values in self.adv_map.items():
-            if key != "logicalOp":
-                for value in values:
-                    # Second safety check for null bytes
-                    if '\x00' in value:
-                        logger.warning(f"Null byte detected in regex value for {key}: {value}")
-                        raise IllegalArgumentException(f"Invalid character in parameter {key}")
+        def process_nested_dict(prefix, nested_dict):
+            """Helper to process nested dictionaries in adv_map"""
+            for key, value in nested_dict.items():
+                full_key = f"{prefix}.{key}" if prefix else key
+                
+                if isinstance(value, dict):
+                    # Check if this is a MongoDB operator dict (like $in)
+                    if any(k.startswith('$') for k in value.keys()):
+                        search_conditions.append({full_key: value})
+                    else:
+                        # Recurse into nested dictionary
+                        process_nested_dict(full_key, value)
+                elif isinstance(value, list):
+                    # Handle list values
+                    for val in value:
+                        if isinstance(val, str) and '\x00' in val:
+                            raise IllegalArgumentException(f"Invalid character in parameter {full_key}")
+                        search_conditions.append({
+                            full_key: {"$regex": val, "$options": "i"}
+                        })
+                else:
+                    # Handle single string values
+                    if isinstance(value, str) and '\x00' in value:
+                        raise IllegalArgumentException(f"Invalid character in parameter {full_key}")
                     
-                    # Check for potential regex DoS patterns
-                    if len(value) > 100 and ('.*' in value or '.+' in value):
-                        logger.warning(f"Potentially malicious regex detected: {value}")
-                        raise IllegalArgumentException(f"Query too complex for {key}")
-                        
                     search_conditions.append({
-                        key: {
-                            "$regex": value,
-                            "$options": "i"
-                        }
+                        full_key: {"$regex": value, "$options": "i"}
                     })
         
+        # Process the entire adv_map
+        process_nested_dict("", self.adv_map)
+        
+        # Rest of the function stays the same
         if not search_conditions:
             return
 
-        # Log the state before processing
         logger.info(f"Processing filters - Conditions: {search_conditions}")
         logger.info(f"Processing filters - Logical Ops: {self.logical_ops}")
 
@@ -233,7 +272,6 @@ class ProcessRequest:
             self.bson_objs = search_conditions
             return
 
-        # Explicitly check logical operator
         logical_op = self.logical_ops[0].lower() if self.logical_ops else "and"
         logger.info(f"Using logical operator: {logical_op}")
 
@@ -243,7 +281,6 @@ class ProcessRequest:
         else:
             logger.info(f"Creating AND query with conditions: {search_conditions}")
             self.bson_objs = [{"$and": search_conditions}]
-
 
     def _build_query(self, search_input: bool, start_time: float) -> Dict[str, Any]:
         """Build final MongoDB query"""
