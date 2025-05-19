@@ -30,19 +30,6 @@ async def search_versions(request: Request, params: Dict[str, Any] = Depends(val
     """
     return version_crud.search(**params)
 
-# @router.post("/versions/")
-# async def create_version(request: Request, data: Dict[str, Any] = Body(..., description="Version data to create")):
-#     """
-#     Create a new version entry.
-    
-#     Args:
-#         data (Dict[str, Any]): The version data to create
-        
-#     Returns:
-#         Dict: The newly created version entry with ID and metadata
-#     """
-#     return version_crud.create(data)
-
 @router.get("/versions/{version_id}")
 async def get_version(request: Request, version_id: str):
     """

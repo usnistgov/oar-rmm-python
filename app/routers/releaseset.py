@@ -30,19 +30,6 @@ async def search_releasesets(request: Request, params: Dict[str, Any] = Depends(
     """
     return releaseset_crud.search(**params)
 
-# @router.post("/releasesets/")
-# async def create_releaseset(request: Request, data: Dict[str, Any] = Body(..., description="Release set data to create")):
-#     """
-#     Create a new release set entry.
-    
-#     Args:
-#         data (Dict[str, Any]): The release set data to create
-        
-#     Returns:
-#         Dict: The newly created release set with ID and metadata
-#     """
-#     return releaseset_crud.create(data)
-
 @router.get("/releasesets/{releaseset_id}")
 async def get_releaseset(request: Request, releaseset_id: str):
     """
