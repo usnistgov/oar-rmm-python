@@ -193,8 +193,27 @@ class ProcessRequest:
                 raise IllegalArgumentException(f"Invalid logical operator: {value}")
             self.logical_ops.append(value)
             return
+        
+        # Special handling for array fields with dot notation (like topic.tag)
+        if '.' in key and ',' in value and not (value.startswith('"') and value.endswith('"')):
+            base_key, sub_key = key.split('.', 1)
             
-        # Handle comma-separated values as OR conditions
+            # Check if this is likely an array field containing objects
+            if base_key in ['topic', 'components', 'references']:
+                values = [val.strip() for val in value.split(',')]
+                
+                # Create a MongoDB $elemMatch query for arrays of objects
+                array_query = []
+                for val in values:
+                    # Use regex to allow partial matches within the field
+                    array_query.append({f"{sub_key}": {"$regex": f".*{val}.*", "$options": "i"}})
+                
+                # Set the elemMatch query directly on the base key
+                self.adv_map[base_key] = {"$elemMatch": {"$or": array_query}}
+                logger.info(f"Created array elemMatch query for {base_key}.{sub_key}: {self.adv_map[base_key]}")
+                return
+            
+        # Regular handling for comma-separated values as OR conditions
         if ',' in value and not (value.startswith('"') and value.endswith('"')):
             # Split by comma and strip whitespace
             values = [val.strip() for val in value.split(',')]
@@ -261,7 +280,6 @@ class ProcessRequest:
         # Process the entire adv_map
         process_nested_dict("", self.adv_map)
         
-        # Rest of the function stays the same
         if not search_conditions:
             return
 
