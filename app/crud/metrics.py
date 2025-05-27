@@ -141,13 +141,21 @@ class MetricsCRUD:
     
     def get_record_metrics(self, record_id):
         """Get metrics for a specific record"""
-        result = self.metrics.find_one({
-        "$or": [
+        query_conditions = [
             {"pdrid": record_id}, 
             {"ediid": record_id},
             {"@id": record_id}
         ]
-        })
+        
+        if not record_id.startswith("ark:"):
+            # Try as MDS value
+            query_conditions.extend([
+                {"pdrid": {"$regex": f".*{record_id}$"}},  # Match MDS at end of pdrid
+                {"ediid": {"$regex": f".*{record_id}$"}},  # Match MDS at end of ediid
+                {"@id": {"$regex": f".*{record_id}$"}}     # Match MDS at end of @id
+            ])
+        
+        result = self.metrics.find_one({"$or": query_conditions})
         if not result:
             return None
         
@@ -254,12 +262,42 @@ class MetricsCRUD:
     def get_file_metrics(self, file_path, recordid):
         """Get metrics for a specific file"""
         result = {}
+        
         if not file_path:
-            print("FILEPTAH is EMPTY")
-            result = self.file_metrics.find_one({"ediid": recordid})
+            # Try multiple ways to find by record ID
+            query_conditions = [
+                {"ediid": recordid},
+                {"pdrid": recordid}
+            ]
+            
+            # Add MDS-based lookups for record ID
+            if not recordid.startswith("ark:"):
+                query_conditions.extend([
+                    {"ediid": {"$regex": f".*{recordid}$"}},
+                    {"pdrid": {"$regex": f".*{recordid}$"}}
+                ])
+                
+            result = self.file_metrics.find_one({"$or": query_conditions})
         else:
-            print("FILEPATH ", file_path)
+            # First try direct filepath lookup
             result = self.file_metrics.find_one({"filepath": file_path})
+            
+            # If not found and file_path doesn't look like a real filepath, 
+            # treat it as a record identifier
+            if not result and not ("/" in file_path or "." in file_path):
+                query_conditions = [
+                    {"ediid": file_path},
+                    {"pdrid": file_path}
+                ]
+                
+                # Add MDS-based lookups if it doesn't start with ark:
+                if not file_path.startswith("ark:"):
+                    query_conditions.extend([
+                        {"ediid": {"$regex": f".*{file_path}$"}},
+                        {"pdrid": {"$regex": f".*{file_path}$"}}
+                    ])
+                    
+                result = self.file_metrics.find_one({"$or": query_conditions})
         
         if not result:
             return None
