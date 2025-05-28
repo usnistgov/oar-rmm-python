@@ -259,69 +259,74 @@ class MetricsCRUD:
         
         return {"unique_users": len(all_users)}
     
-    def get_file_metrics(self, file_path, recordid):
-        """Get metrics for a specific file"""
-        result = {}
+    def get_file_metrics(self, file_path, recordid=None):
+        """Get metrics for a specific file or all files for a record"""
         
         if not file_path:
-            # Try multiple ways to find by record ID
+            # Try multiple ways to find by record ID - return ALL files for this record
             query_conditions = [
                 {"ediid": recordid},
                 {"pdrid": recordid}
             ]
             
-            # Add MDS-based lookups for record ID
+            # MDS-based lookups for record ID
             if not recordid.startswith("ark:"):
                 query_conditions.extend([
                     {"ediid": {"$regex": f".*{recordid}$"}},
                     {"pdrid": {"$regex": f".*{recordid}$"}}
                 ])
                 
-            result = self.file_metrics.find_one({"$or": query_conditions})
+            results = list(self.file_metrics.find({"$or": query_conditions}))
         else:
-            # First try direct filepath lookup
+            # First try direct filepath lookup for a single file
             result = self.file_metrics.find_one({"filepath": file_path})
             
-            # If not found and file_path doesn't look like a real filepath, 
-            # treat it as a record identifier
-            if not result and not ("/" in file_path or "." in file_path):
-                query_conditions = [
-                    {"ediid": file_path},
-                    {"pdrid": file_path}
-                ]
-                
-                # Add MDS-based lookups if it doesn't start with ark:
-                if not file_path.startswith("ark:"):
-                    query_conditions.extend([
-                        {"ediid": {"$regex": f".*{file_path}$"}},
-                        {"pdrid": {"$regex": f".*{file_path}$"}}
-                    ])
+            if result:
+                results = [result]  # Convert single result to list
+            else:
+                # If not found and file_path doesn't look like a real filepath, 
+                # treat it as a record identifier and return ALL files for that record
+                if not ("/" in file_path or "." in file_path):
+                    query_conditions = [
+                        {"ediid": file_path},
+                        {"pdrid": file_path}
+                    ]
                     
-                result = self.file_metrics.find_one({"$or": query_conditions})
+                    # Add MDS-based lookups if it doesn't start with ark:
+                    if not file_path.startswith("ark:"):
+                        query_conditions.extend([
+                            {"ediid": {"$regex": f".*{file_path}$"}},
+                            {"pdrid": {"$regex": f".*{file_path}$"}}
+                        ])
+                        
+                    results = list(self.file_metrics.find({"$or": query_conditions}))
+                else:
+                    results = []
         
-        if not result:
+        if not results:
             return None
         
-        # Format the result in the desired structure
+        # Format ALL results in the desired structure
+        files_metrics = []
+        for result in results:
+            files_metrics.append({
+                "pdrid": result.get("pdrid"),
+                "ediid": result.get("ediid"),
+                "filepath": result.get("filepath"),
+                "downloadURL": result.get("downloadURL"),
+                "success_get": result.get("success_get", 0),
+                "failure_get": result.get("failure_get", 0),
+                "datacart_or_client": result.get("datacart_or_client", 0),
+                "total_size_download": result.get("total_size_download", 0),
+                "first_time_logged": result.get("first_time_logged"),
+                "last_time_logged": result.get("last_time_logged")
+            })
+        
         return {
-            "FilesMetricsCount": 1,
+            "FilesMetricsCount": len(files_metrics),
             "PageSize": 0,
-            "FilesMetrics": [
-                {
-                    "pdrid": result.get("pdrid"),
-                    "ediid": result.get("ediid"),
-                    "filepath": result.get("filepath"),
-                    "downloadURL": result.get("downloadURL"),
-                    "success_get": result.get("success_get", 0),
-                    "failure_get": result.get("failure_get", 0),
-                    "datacart_or_client": result.get("datacart_or_client", 0),
-                    "total_size_download": result.get("total_size_download", 0),
-                    "first_time_logged": result.get("first_time_logged"),
-                    "last_time_logged": result.get("last_time_logged")
-                }
-            ]
+            "FilesMetrics": files_metrics
         }
-
     
     def get_file_metrics_list(self, sort_by="total_size_download", sort_order=-1):
         """Get metrics for all files with sorting"""
