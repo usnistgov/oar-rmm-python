@@ -202,18 +202,25 @@ class ProcessRequest:
             if base_key in ['topic', 'components', 'references']:
                 values = [val.strip() for val in value.split(',')]
                 
-                # Create a MongoDB $elemMatch query for arrays of objects
-                array_query = []
+                # Create separate $elemMatch conditions for each value (AND logic)
+                conditions = []
                 for val in values:
-                    # Use regex to allow partial matches within the field
-                    array_query.append({f"{sub_key}": {"$regex": f".*{val}.*", "$options": "i"}})
+                    conditions.append({
+                        base_key: {
+                            "$elemMatch": {
+                                f"{sub_key}": {"$regex": f".*{val}.*", "$options": "i"}
+                            }
+                        }
+                    })
                 
-                # Set the elemMatch query directly on the base key
-                self.adv_map[base_key] = {"$elemMatch": {"$or": array_query}}
-                logger.info(f"Created array elemMatch query for {base_key}.{sub_key}: {self.adv_map[base_key]}")
+                # Store conditions to be combined with AND in _process_advanced_filters
+                if not hasattr(self, 'array_conditions'):
+                    self.array_conditions = []
+                self.array_conditions.extend(conditions)
+                logger.info(f"Created AND array conditions for {base_key}.{sub_key}: {conditions}")
                 return
             
-        # Regular handling for comma-separated values as OR conditions
+        # Regular handling for comma-separated values as OR conditions (for non-array fields)
         if ',' in value and not (value.startswith('"') and value.endswith('"')):
             # Split by comma and strip whitespace
             values = [val.strip() for val in value.split(',')]
@@ -241,15 +248,23 @@ class ProcessRequest:
                 current[part] = {}
             current = current[part]
         
-        # Just set the value directly, don't do additional append
+        # Just set the value directly
         current[parts[-1]] = value
 
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
         search_conditions = []
         
+        # Add text search condition if present
+        if hasattr(self, 'search_phrase_filter') and self.search_phrase_filter:
+            search_conditions.append(self.search_phrase_filter)
+        
+        # Add array conditions (these are already individual conditions that need AND)
+        if hasattr(self, 'array_conditions'):
+            search_conditions.extend(self.array_conditions)
+        
+        # Add regular field conditions
         def process_nested_dict(prefix, nested_dict):
-            """Helper to process nested dictionaries in adv_map"""
             for key, value in nested_dict.items():
                 full_key = f"{prefix}.{key}" if prefix else key
                 
@@ -260,19 +275,8 @@ class ProcessRequest:
                     else:
                         # Recurse into nested dictionary
                         process_nested_dict(full_key, value)
-                elif isinstance(value, list):
-                    # Handle list values
-                    for val in value:
-                        if isinstance(val, str) and '\x00' in val:
-                            raise IllegalArgumentException(f"Invalid character in parameter {full_key}")
-                        search_conditions.append({
-                            full_key: {"$regex": val, "$options": "i"}
-                        })
                 else:
                     # Handle single string values
-                    if isinstance(value, str) and '\x00' in value:
-                        raise IllegalArgumentException(f"Invalid character in parameter {full_key}")
-                    
                     search_conditions.append({
                         full_key: {"$regex": value, "$options": "i"}
                     })
@@ -284,20 +288,11 @@ class ProcessRequest:
             return
 
         logger.info(f"Processing filters - Conditions: {search_conditions}")
-        logger.info(f"Processing filters - Logical Ops: {self.logical_ops}")
-
+        
+        # Always use AND logic for combining all conditions
         if len(search_conditions) == 1:
             self.bson_objs = search_conditions
-            return
-
-        logical_op = self.logical_ops[0].lower() if self.logical_ops else "and"
-        logger.info(f"Using logical operator: {logical_op}")
-
-        if logical_op == "or":
-            logger.info(f"Creating OR query with conditions: {search_conditions}")
-            self.bson_objs = [{"$or": search_conditions}]
         else:
-            logger.info(f"Creating AND query with conditions: {search_conditions}")
             self.bson_objs = [{"$and": search_conditions}]
 
     def _build_query(self, search_input: bool, start_time: float) -> Dict[str, Any]:
