@@ -34,6 +34,11 @@ class ProcessRequest:
         self.search_phrase_filter = None
         self.filter_gte = None
         self.filter_lt = None
+        # Reset any advanced query conditions
+        if hasattr(self, 'array_conditions'):
+            delattr(self, 'array_conditions')
+        if hasattr(self, 'field_and_conditions'):
+            delattr(self, 'field_and_conditions')
 
     def validate_input(self, params: Dict[str, Any]) -> None:
         """Validate request input parameters"""
@@ -141,7 +146,7 @@ class ProcessRequest:
             logger.info(f"After parameter processing - Logical Ops: {self.logical_ops}")
             
             self._validate_projections()
-            if self.adv_map:
+            if self.adv_map or hasattr(self, 'array_conditions') or hasattr(self, 'field_and_conditions'):
                 self._process_advanced_filters()
 
             return self._build_query(search_input, start_time)
@@ -205,38 +210,49 @@ class ProcessRequest:
                 # Create separate $elemMatch conditions for each value (AND logic)
                 conditions = []
                 for val in values:
-                    conditions.append({
-                        base_key: {
-                            "$elemMatch": {
-                                f"{sub_key}": {"$regex": f".*{val}.*", "$options": "i"}
+                    # Use exact matching for topic.tag instead of regex
+                    if base_key == 'topic' and sub_key == 'tag':
+                        conditions.append({
+                            base_key: {
+                                "$elemMatch": {
+                                    f"{sub_key}": val  # Exact match
+                                }
                             }
-                        }
-                    })
+                        })
+                    else:
+                        # Keep regex for other fields
+                        conditions.append({
+                            base_key: {
+                                "$elemMatch": {
+                                    f"{sub_key}": {"$regex": f".*{val}.*", "$options": "i"}
+                                }
+                            }
+                        })
                 
                 # Store conditions to be combined with AND in _process_advanced_filters
                 if not hasattr(self, 'array_conditions'):
                     self.array_conditions = []
                 self.array_conditions.extend(conditions)
                 logger.info(f"Created AND array conditions for {base_key}.{sub_key}: {conditions}")
+                logger.info(f"Total array_conditions now: {self.array_conditions}") 
                 return
             
-        # Regular handling for comma-separated values as OR conditions (for non-array fields)
+        # For other comma-separated values, change from OR to AND logic
         if ',' in value and not (value.startswith('"') and value.endswith('"')):
             # Split by comma and strip whitespace
             values = [val.strip() for val in value.split(',')]
             
-            # Create a MongoDB $in query for this field
-            parts = key.split('.')
-            current = self.adv_map
+            # Create AND conditions instead of $in (OR) conditions
+            if not hasattr(self, 'field_and_conditions'):
+                self.field_and_conditions = []
             
-            # Navigate to the nested field location
-            for part in parts[:-1]:
-                if part not in current:
-                    current[part] = {}
-                current = current[part]
+            # Create individual equality conditions for each value
+            for val in values:
+                self.field_and_conditions.append({
+                    key: {"$regex": f".*{val}.*", "$options": "i"}
+                })
             
-            # Set the $in operator for the field
-            current[parts[-1]] = {"$in": values}
+            logger.info(f"Created AND field conditions for {key}: {values}")
             return
             
         # Regular non-comma values - handle dot notation
@@ -258,6 +274,10 @@ class ProcessRequest:
         # Add array conditions (these are already individual conditions that need AND)
         if hasattr(self, 'array_conditions'):
             search_conditions.extend(self.array_conditions)
+        
+        # Add field AND conditions
+        if hasattr(self, 'field_and_conditions'):
+            search_conditions.extend(self.field_and_conditions)
         
         # Add regular field conditions
         def process_nested_dict(prefix, nested_dict):
@@ -318,7 +338,10 @@ class ProcessRequest:
         elif len(conditions) > 1:
             query = {"$and": conditions}
 
+        
         logger.info(f"Final MongoDB Query: {query}")
+        logger.info(f"Query conditions count: {len(conditions)}")
+        logger.info(f"Individual conditions: {conditions}")  
 
         return {
             "query": query,
