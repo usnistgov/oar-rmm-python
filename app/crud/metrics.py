@@ -20,124 +20,6 @@ class MetricsCRUD:
         if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
             return default_if_non_finite
         return value
-        
-    def record_download(self, pdrid, ediid, ip_address, user_agent="", referrer="", 
-                      timestamp=None, download_size=0):
-        """
-        Record a dataset download in the metrics collection.
-        
-        Args:
-            pdrid (str): The PDRID of the downloaded record
-            ediid (str): The EDIID of the downloaded record
-            ip_address (str): The IP address of the user
-            user_agent (str): The user agent string
-            referrer (str): The HTTP referrer
-            timestamp (datetime): The time of the download
-            download_size (int): The size of the downloaded content
-        """
-        if timestamp is None:
-            timestamp = datetime.now()
-            
-        # Insert into metrics collection
-        self.metrics.insert_one({
-            "pdrid": pdrid,
-            "ediid": ediid,
-            "ip_address": ip_address,
-            "user_agent": user_agent,
-            "referrer": referrer,
-            "timestamp": timestamp,
-            "download_size": download_size
-        })
-        
-        # Update record metrics summary
-        self._update_record_metrics(pdrid, ediid, ip_address, timestamp, download_size)
-        
-        # Update repository metrics
-        self._update_repo_metrics(timestamp)
-        
-        # Update unique users
-        self._update_unique_users(ip_address, timestamp)
-        
-    def _update_record_metrics(self, pdrid, ediid, ip_address, timestamp, download_size):
-        """Update the record metrics collection with this download"""
-        # Use distinct to count unique users
-        unique_users = len(self.metrics.distinct("ip_address", {"ediid": ediid}))
-        
-        # Count total downloads
-        download_count = self.metrics.count_documents({"ediid": ediid})
-        
-        # Find first download time
-        first_record = self.metrics.find_one(
-            {"ediid": ediid}, 
-            sort=[("timestamp", ASCENDING)]
-        )
-        first_time = first_record["timestamp"] if first_record else timestamp
-        
-        # Update record metrics
-        self.metrics.update_one(
-            {"ediid": ediid},
-            {
-                "$set": {
-                    "ediid": ediid,
-                    "pdrid": pdrid,
-                    "unique_users": unique_users,
-                    "download_count": download_count,
-                    "first_time_logged": first_time,
-                    "last_time_logged": timestamp,
-                    "total_download_size": download_size * download_count
-                }
-            },
-            upsert=True
-        )
-    
-    def _update_repo_metrics(self, timestamp):
-        """Update repository metrics for the given month"""
-        # Extract year and month
-        year = timestamp.year
-        month = timestamp.month
-        
-        # Count metrics for this month
-        monthly_downloads = self.metrics.count_documents({
-            "timestamp": {
-                "$gte": datetime(year, month, 1),
-                "$lt": datetime(year, month + 1 if month < 12 else 1, 1)
-            }
-        })
-        
-        monthly_unique_users = len(self.metrics.distinct("ip_address", {
-            "timestamp": {
-                "$gte": datetime(year, month, 1),
-                "$lt": datetime(year, month + 1 if month < 12 else 1, 1)
-            }
-        }))
-        
-        # Update repo metrics
-        self.repo_metrics.update_one(
-            {"year": year, "month": month},
-            {
-                "$set": {
-                    "year": year,
-                    "month": month,
-                    "downloads": monthly_downloads,
-                    "unique_users": monthly_unique_users,
-                    "last_updated": timestamp
-                }
-            },
-            upsert=True
-        )
-    
-    def _update_unique_users(self, ip_address, timestamp):
-        """Update the unique users collection"""
-        today = datetime(timestamp.year, timestamp.month, timestamp.day)
-        
-        # Update daily record
-        self.unique_users.update_one(
-            {"date": today},
-            {
-                "$addToSet": {"users": ip_address}
-            },
-            upsert=True
-        )
     
     def get_record_metrics(self, record_id):
         """Get metrics for a specific record"""
@@ -171,7 +53,7 @@ class MetricsCRUD:
                     "last_time_logged": result.get("last_time_logged"),
                     "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
                     "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
-                    "number_users": self._sanitize_float_for_json(result.get("unique_users", 0)), 
+                    "number_users": self._sanitize_float_for_json(result.get("number_users", 0)), 
                     "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
                 }
             ]
@@ -215,7 +97,7 @@ class MetricsCRUD:
                 "last_time_logged": result.get("last_time_logged"),
                 "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
                 "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
-                "number_users": self._sanitize_float_for_json(result.get("unique_users", 0)),
+                "number_users": self._sanitize_float_for_json(result.get("number_users", 0)),
                 "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
             })
         
@@ -250,14 +132,6 @@ class MetricsCRUD:
             "PageSize": 0,
             "RepoMetrics": results
         }
-    
-    def get_total_unique_users(self):
-        """Get total unique users count"""
-        all_users = set()
-        for doc in self.unique_users.find({}, {"users": 1}):
-            all_users.update(doc.get("users", []))
-        
-        return {"unique_users": len(all_users)}
     
     def get_file_metrics(self, file_path, recordid=None):
         """Get metrics for a specific file or all files for a record"""

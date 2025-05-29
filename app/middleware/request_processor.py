@@ -254,11 +254,7 @@ class ProcessRequest:
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
         search_conditions = []
-        
-        # Add text search condition if present
-        if hasattr(self, 'search_phrase_filter') and self.search_phrase_filter:
-            search_conditions.append(self.search_phrase_filter)
-        
+
         # Add array conditions (these are already individual conditions that need AND)
         if hasattr(self, 'array_conditions'):
             search_conditions.extend(self.array_conditions)
@@ -299,28 +295,30 @@ class ProcessRequest:
         """Build final MongoDB query"""
         query = {}
         
+        # Combine all conditions properly
+        conditions = []
+        
         # Add text search if present
         if self.search_phrase_filter:
-            query.update(self.search_phrase_filter)
+            conditions.append(self.search_phrase_filter)
 
         # Add field conditions
         if self.bson_objs:
-            if len(self.bson_objs) == 1:
-                # Single condition or already grouped conditions
-                query.update(self.bson_objs[0])
-            else:
-                # Multiple separate conditions
-                query.update({"$and": self.bson_objs})
+            conditions.extend(self.bson_objs)
 
         # Add date filters if present
         if self.filter_gte:
-            query.update(self.filter_gte)
+            conditions.append(self.filter_gte)
         if self.filter_lt:
-            query.update(self.filter_lt)
+            conditions.append(self.filter_lt)
+
+        # Combine all conditions with $and
+        if len(conditions) == 1:
+            query = conditions[0]
+        elif len(conditions) > 1:
+            query = {"$and": conditions}
 
         logger.info(f"Final MongoDB Query: {query}")
-        logger.info(f"Projections: {self.projections}")
-        logger.info(f"Sort: {self.sort}")
 
         return {
             "query": query,
