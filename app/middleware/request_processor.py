@@ -37,8 +37,8 @@ class ProcessRequest:
         # Reset any advanced query conditions
         if hasattr(self, 'array_conditions'):
             delattr(self, 'array_conditions')
-        if hasattr(self, 'field_and_conditions'):
-            delattr(self, 'field_and_conditions')
+        if hasattr(self, 'field_or_conditions'):
+            delattr(self, 'field_or_conditions')
 
     def validate_input(self, params: Dict[str, Any]) -> None:
         """Validate request input parameters"""
@@ -187,97 +187,72 @@ class ProcessRequest:
             self.projections = None
 
     def _update_map(self, key: str, value: str) -> None:
-        """Update advanced query map with validation"""
-        # Security checks
-        if '\x00' in value:
-            raise IllegalArgumentException(f"Invalid character in {key}: null bytes are not allowed")
-        
-        # Special handling for logical operators
-        if key == "logicalOp":
-            if value.lower() not in ["and", "or", "not"]:
-                raise IllegalArgumentException(f"Invalid logical operator: {value}")
-            self.logical_ops.append(value)
+        # Handle topic.tag specially, regardless of whether it contains commas
+        if key == 'topic.tag':
+            import re
+            # Split by commas if present, otherwise treat as single value
+            values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
+            
+            # Try both approaches to maximize matching:
+            or_conditions = []
+            
+            # 1. Case-insensitive regex on the dotted field (works if tag is a direct array)
+            for val in values:
+                or_conditions.append({"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}})
+            
+            # 2. $elemMatch with regex (works if topic is an array of objects)
+            for val in values:
+                or_conditions.append({
+                    "topic": {
+                        "$elemMatch": {
+                            "tag": {"$regex": f"{re.escape(val)}", "$options": "i"}
+                        }
+                    }
+                })
+            
+            if not hasattr(self, 'field_or_conditions'):
+                self.field_or_conditions = []
+            
+            # Use $or to try both approaches
+            self.field_or_conditions.append({"$or": or_conditions})
+            logger.info(f"Created flexible topic.tag match: {values}")
             return
         
-        # Special handling for array fields with dot notation (like topic.tag)
+        # Now handle other array fields with dot notation
         if '.' in key and ',' in value and not (value.startswith('"') and value.endswith('"')):
             base_key, sub_key = key.split('.', 1)
             
-            # Check if this is likely an array field containing objects
-            if base_key in ['topic', 'components', 'references']:
-                values = [val.strip() for val in value.split(',')]
+            # Skip topic.tag as we already handled it above :)
+            if key == 'topic.tag':
+                return
                 
-                # Create separate $elemMatch conditions for each value (AND logic)
+                
+            # For other array fields like components.@id etc.
+            if base_key in ['components', 'references']:
+                values = [val.strip() for val in value.split(',')]
                 conditions = []
                 for val in values:
-                    # Use exact matching for topic.tag instead of regex
-                    if base_key == 'topic' and sub_key == 'tag':
-                        conditions.append({
-                            base_key: {
-                                "$elemMatch": {
-                                    f"{sub_key}": val  # Exact match
-                                }
-                            }
-                        })
-                    else:
-                        # Keep regex for other fields
-                        conditions.append({
-                            base_key: {
-                                "$elemMatch": {
-                                    f"{sub_key}": {"$regex": f".*{val}.*", "$options": "i"}
-                                }
-                            }
-                        })
+                    conditions.append({
+                        base_key: {'$elemMatch': { sub_key: {'$regex': f'.*{val}.*', '$options': 'i'} }}
+                    })
                 
-                # Store conditions to be combined with AND in _process_advanced_filters
                 if not hasattr(self, 'array_conditions'):
                     self.array_conditions = []
                 self.array_conditions.extend(conditions)
                 logger.info(f"Created AND array conditions for {base_key}.{sub_key}: {conditions}")
-                logger.info(f"Total array_conditions now: {self.array_conditions}") 
                 return
-            
-        # For other comma-separated values, change from OR to AND logic
-        if ',' in value and not (value.startswith('"') and value.endswith('"')):
-            # Split by comma and strip whitespace
-            values = [val.strip() for val in value.split(',')]
-            
-            # Create AND conditions instead of $in (OR) conditions
-            if not hasattr(self, 'field_and_conditions'):
-                self.field_and_conditions = []
-            
-            # Create individual equality conditions for each value
-            for val in values:
-                self.field_and_conditions.append({
-                    key: {"$regex": f".*{val}.*", "$options": "i"}
-                })
-            
-            logger.info(f"Created AND field conditions for {key}: {values}")
-            return
-            
-        # Regular non-comma values - handle dot notation
-        parts = key.split('.')
-        current = self.adv_map
-        
-        for part in parts[:-1]:
-            if part not in current:
-                current[part] = {}
-            current = current[part]
-        
-        # Just set the value directly
-        current[parts[-1]] = value
 
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
         search_conditions = []
 
-        # Add array conditions (these are already individual conditions that need AND)
+        # Add array conditions (these can be either AND or OR depending on the field)
         if hasattr(self, 'array_conditions'):
             search_conditions.extend(self.array_conditions)
         
-        # Add field AND conditions
-        if hasattr(self, 'field_and_conditions'):
-            search_conditions.extend(self.field_and_conditions)
+        # Add field OR conditions
+        if hasattr(self, 'field_or_conditions'):
+            search_conditions.extend(self.field_or_conditions)
         
         # Add regular field conditions
         def process_nested_dict(prefix, nested_dict):
