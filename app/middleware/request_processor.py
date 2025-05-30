@@ -34,6 +34,11 @@ class ProcessRequest:
         self.search_phrase_filter = None
         self.filter_gte = None
         self.filter_lt = None
+        # Reset any advanced query conditions
+        if hasattr(self, 'array_conditions'):
+            delattr(self, 'array_conditions')
+        if hasattr(self, 'field_or_conditions'):
+            delattr(self, 'field_or_conditions')
 
     def validate_input(self, params: Dict[str, Any]) -> None:
         """Validate request input parameters"""
@@ -141,7 +146,7 @@ class ProcessRequest:
             logger.info(f"After parameter processing - Logical Ops: {self.logical_ops}")
             
             self._validate_projections()
-            if self.adv_map:
+            if self.adv_map or hasattr(self, 'array_conditions') or hasattr(self, 'field_or_conditions'):
                 self._process_advanced_filters()
 
             return self._build_query(search_input, start_time)
@@ -183,94 +188,174 @@ class ProcessRequest:
 
     def _update_map(self, key: str, value: str) -> None:
         """Update advanced query map with validation"""
-        # Security checks
+        # Security check
         if '\x00' in value:
             raise IllegalArgumentException(f"Invalid character in {key}: null bytes are not allowed")
         
-        # Regular update logic
+        # Handle logical operators
         if key == "logicalOp":
             if value.lower() not in ["and", "or", "not"]:
                 raise IllegalArgumentException(f"Invalid logical operator: {value}")
-            self.logical_ops.append(value)
-        else:
-            if key not in self.adv_map:
-                self.adv_map[key] = []
-            self.adv_map[key].append(value)
+            self.logical_ops.append(value.lower())
+            return
+        
+       # Special handling for topic.tag - similar to Java implementation :)
+        if key == 'topic.tag':
+            import re
+            # Split by commas if present, otherwise treat as single value
+            values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
+            
+            # Create an $or of regex conditions - match anything before the colon
+            or_conditions = []
+            for val in values:
+                # This matches "Public Safety" at the beginning, followed by colon or end of string
+                # Will match both "Public Safety" and "Public Safety: Public safety communications research"
+                or_conditions.append({"topic.tag": {"$regex": f"^{re.escape(val)}(:|$)", "$options": "i"}})
+            
+            # Create $or condition - this is equivalent to Java's Filters.in() with regex patterns
+            condition = {"$or": or_conditions}
+            
+            if not hasattr(self, 'field_or_conditions'):
+                self.field_or_conditions = []
+            
+            self.field_or_conditions.append(condition)
+            logger.info(f"Created topic.tag prefix match condition: {condition}")
+            return
+        
+        # Handle array fields with dot notation
+        if '.' in key and ',' in value and not (value.startswith('"') and value.endswith('"')):
+            base_key, sub_key = key.split('.', 1)
+            
+            # Skip topic.tag as we already handled it above
+            if key == 'topic.tag':
+                return
+            
+            # For array fields like components.@id etc.
+            if base_key in ['components', 'references']:
+                values = [val.strip() for val in value.split(',')]
+                patterns = []
+                
+                # Create case-insensitive regex patterns for each value
+                for val in values:
+                    patterns.append({"$regex": f"{re.escape(val)}", "$options": "i"})
+                
+                # Create a condition using $elemMatch and $in
+                condition = {
+                    base_key: {
+                        "$elemMatch": {
+                            sub_key: {"$in": patterns}
+                        }
+                    }
+                }
+                
+                if not hasattr(self, 'array_conditions'):
+                    self.array_conditions = []
+                self.array_conditions.append(condition)
+                logger.info(f"Created array condition for {base_key}.{sub_key}: {condition}")
+                return
+        
+        # For comma-separated values in regular fields
+        if ',' in value and not (value.startswith('"') and value.endswith('"')):
+            values = [val.strip() for val in value.split(',')]
+            patterns = []
+            
+            # Create case-insensitive regex patterns for each value
+            for val in values:
+                patterns.append({"$regex": f"^{re.escape(val)}$", "$options": "i"})
+            
+            # Use $in for matching any value
+            condition = {key: {"$in": patterns}}
+            
+            if not hasattr(self, 'field_or_conditions'):
+                self.field_or_conditions = []
+            self.field_or_conditions.append(condition)
+            logger.info(f"Created OR field condition for {key}: {condition}")
+            return
+        
+        # Regular value handling - build nested dictionary structure
+        parts = key.split('.')
+        current = self.adv_map
+        
+        # Navigate to the nested location
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        
+        # Set the value with regex for case-insensitivity
+        current[parts[-1]] = {"$regex": f"^{re.escape(value)}$", "$options": "i"}
 
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
         search_conditions = []
+
+        # Add array conditions (these can be either AND or OR depending on the field)
+        if hasattr(self, 'array_conditions'):
+            search_conditions.extend(self.array_conditions)
         
-        # Create a condition for each field-value pair
-        for key, values in self.adv_map.items():
-            if key != "logicalOp":
-                for value in values:
-                    # Second safety check for null bytes
-                    if '\x00' in value:
-                        logger.warning(f"Null byte detected in regex value for {key}: {value}")
-                        raise IllegalArgumentException(f"Invalid character in parameter {key}")
-                    
-                    # Check for potential regex DoS patterns
-                    if len(value) > 100 and ('.*' in value or '.+' in value):
-                        logger.warning(f"Potentially malicious regex detected: {value}")
-                        raise IllegalArgumentException(f"Query too complex for {key}")
-                        
+        # Add field OR conditions
+        if hasattr(self, 'field_or_conditions'):
+            search_conditions.extend(self.field_or_conditions)
+        
+        # Add regular field conditions
+        def process_nested_dict(prefix, nested_dict):
+            for key, value in nested_dict.items():
+                full_key = f"{prefix}.{key}" if prefix else key
+                
+                if isinstance(value, dict):
+                    # Check if this is a MongoDB operator dict (like $in)
+                    if any(k.startswith('$') for k in value.keys()):
+                        search_conditions.append({full_key: value})
+                    else:
+                        # Recurse into nested dictionary
+                        process_nested_dict(full_key, value)
+                else:
+                    # Handle single string values
                     search_conditions.append({
-                        key: {
-                            "$regex": value,
-                            "$options": "i"
-                        }
+                        full_key: {"$regex": value, "$options": "i"}
                     })
+        
+        # Process the entire adv_map
+        process_nested_dict("", self.adv_map)
         
         if not search_conditions:
             return
 
-        # Log the state before processing
         logger.info(f"Processing filters - Conditions: {search_conditions}")
-        logger.info(f"Processing filters - Logical Ops: {self.logical_ops}")
-
-        if len(search_conditions) == 1:
-            self.bson_objs = search_conditions
-            return
-
-        # Explicitly check logical operator
-        logical_op = self.logical_ops[0].lower() if self.logical_ops else "and"
-        logger.info(f"Using logical operator: {logical_op}")
-
-        if logical_op == "or":
-            logger.info(f"Creating OR query with conditions: {search_conditions}")
-            self.bson_objs = [{"$or": search_conditions}]
-        else:
-            logger.info(f"Creating AND query with conditions: {search_conditions}")
-            self.bson_objs = [{"$and": search_conditions}]
-
+        
+        self.bson_objs = search_conditions 
 
     def _build_query(self, search_input: bool, start_time: float) -> Dict[str, Any]:
         """Build final MongoDB query"""
         query = {}
         
+        # Combine all conditions properly
+        conditions = []
+        
         # Add text search if present
         if self.search_phrase_filter:
-            query.update(self.search_phrase_filter)
+            conditions.append(self.search_phrase_filter)
 
         # Add field conditions
         if self.bson_objs:
-            if len(self.bson_objs) == 1:
-                # Single condition or already grouped conditions
-                query.update(self.bson_objs[0])
-            else:
-                # Multiple separate conditions
-                query.update({"$and": self.bson_objs})
+            conditions.extend(self.bson_objs)
 
         # Add date filters if present
         if self.filter_gte:
-            query.update(self.filter_gte)
+            conditions.append(self.filter_gte)
         if self.filter_lt:
-            query.update(self.filter_lt)
+            conditions.append(self.filter_lt)
 
+        # Combine all conditions with $and
+        if len(conditions) == 1:
+            query = conditions[0]
+        elif len(conditions) > 1:
+            query = {"$and": conditions}
+
+        
         logger.info(f"Final MongoDB Query: {query}")
-        logger.info(f"Projections: {self.projections}")
-        logger.info(f"Sort: {self.sort}")
+        logger.info(f"Query conditions count: {len(conditions)}")
+        logger.info(f"Individual conditions: {conditions}")  
 
         return {
             "query": query,

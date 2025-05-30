@@ -2,6 +2,7 @@ from datetime import datetime
 from app.database import db, metrics_db
 from pymongo import ASCENDING, DESCENDING
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -9,132 +10,34 @@ class MetricsCRUD:
     def __init__(self):
         """Initialize metrics collections"""
         # Use the original metrics collection
-        self.metrics = metrics_db.metrics
+        self.metrics = metrics_db.recordMetrics
         self.file_metrics = metrics_db.fileMetrics
         self.repo_metrics = metrics_db.repoMetrics
         self.unique_users = metrics_db.uniqueUsers
-        
-    def record_download(self, pdrid, ediid, ip_address, user_agent="", referrer="", 
-                      timestamp=None, download_size=0):
-        """
-        Record a dataset download in the metrics collection.
-        
-        Args:
-            pdrid (str): The PDRID of the downloaded record
-            ediid (str): The EDIID of the downloaded record
-            ip_address (str): The IP address of the user
-            user_agent (str): The user agent string
-            referrer (str): The HTTP referrer
-            timestamp (datetime): The time of the download
-            download_size (int): The size of the downloaded content
-        """
-        if timestamp is None:
-            timestamp = datetime.now()
-            
-        # Insert into metrics collection
-        self.metrics.insert_one({
-            "pdrid": pdrid,
-            "ediid": ediid,
-            "ip_address": ip_address,
-            "user_agent": user_agent,
-            "referrer": referrer,
-            "timestamp": timestamp,
-            "download_size": download_size
-        })
-        
-        # Update record metrics summary
-        self._update_record_metrics(pdrid, ediid, ip_address, timestamp, download_size)
-        
-        # Update repository metrics
-        self._update_repo_metrics(timestamp)
-        
-        # Update unique users
-        self._update_unique_users(ip_address, timestamp)
-        
-    def _update_record_metrics(self, pdrid, ediid, ip_address, timestamp, download_size):
-        """Update the record metrics collection with this download"""
-        # Use distinct to count unique users
-        unique_users = len(self.metrics.distinct("ip_address", {"ediid": ediid}))
-        
-        # Count total downloads
-        download_count = self.metrics.count_documents({"ediid": ediid})
-        
-        # Find first download time
-        first_record = self.metrics.find_one(
-            {"ediid": ediid}, 
-            sort=[("timestamp", ASCENDING)]
-        )
-        first_time = first_record["timestamp"] if first_record else timestamp
-        
-        # Update record metrics
-        self.metrics.update_one(
-            {"ediid": ediid},
-            {
-                "$set": {
-                    "ediid": ediid,
-                    "pdrid": pdrid,
-                    "unique_users": unique_users,
-                    "download_count": download_count,
-                    "first_time_logged": first_time,
-                    "last_time_logged": timestamp,
-                    "total_download_size": download_size * download_count
-                }
-            },
-            upsert=True
-        )
-    
-    def _update_repo_metrics(self, timestamp):
-        """Update repository metrics for the given month"""
-        # Extract year and month
-        year = timestamp.year
-        month = timestamp.month
-        
-        # Count metrics for this month
-        monthly_downloads = self.metrics.count_documents({
-            "timestamp": {
-                "$gte": datetime(year, month, 1),
-                "$lt": datetime(year, month + 1 if month < 12 else 1, 1)
-            }
-        })
-        
-        monthly_unique_users = len(self.metrics.distinct("ip_address", {
-            "timestamp": {
-                "$gte": datetime(year, month, 1),
-                "$lt": datetime(year, month + 1 if month < 12 else 1, 1)
-            }
-        }))
-        
-        # Update repo metrics
-        self.repo_metrics.update_one(
-            {"year": year, "month": month},
-            {
-                "$set": {
-                    "year": year,
-                    "month": month,
-                    "downloads": monthly_downloads,
-                    "unique_users": monthly_unique_users,
-                    "last_updated": timestamp
-                }
-            },
-            upsert=True
-        )
-    
-    def _update_unique_users(self, ip_address, timestamp):
-        """Update the unique users collection"""
-        today = datetime(timestamp.year, timestamp.month, timestamp.day)
-        
-        # Update daily record
-        self.unique_users.update_one(
-            {"date": today},
-            {
-                "$addToSet": {"users": ip_address}
-            },
-            upsert=True
-        )
+
+    def _sanitize_float_for_json(self, value, default_if_non_finite=0):
+        """Sanitizes float values that are not JSON compliant (NaN, inf, -inf)."""
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return default_if_non_finite
+        return value
     
     def get_record_metrics(self, record_id):
         """Get metrics for a specific record"""
-        result = self.metrics.find_one({"$or": [{"pdrid": record_id}, {"ediid": record_id}]})
+        query_conditions = [
+            {"pdrid": record_id}, 
+            {"ediid": record_id},
+            {"@id": record_id}
+        ]
+        
+        if not record_id.startswith("ark:"):
+            # Try as MDS value
+            query_conditions.extend([
+                {"pdrid": {"$regex": f".*{record_id}$"}},  # Match MDS at end of pdrid
+                {"ediid": {"$regex": f".*{record_id}$"}},  # Match MDS at end of ediid
+                {"@id": {"$regex": f".*{record_id}$"}}     # Match MDS at end of @id
+            ])
+        
+        result = self.metrics.find_one({"$or": query_conditions})
         if not result:
             return None
         
@@ -148,26 +51,41 @@ class MetricsCRUD:
                     "ediid": result.get("ediid"),
                     "first_time_logged": result.get("first_time_logged"),
                     "last_time_logged": result.get("last_time_logged"),
-                    "total_size_download": result.get("total_download_size", 0),
-                    "success_get": result.get("download_count", 0),
-                    "number_users": result.get("unique_users", 0),
-                    "record_download": result.get("download_count", 0)
+                    "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
+                    "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
+                    "number_users": self._sanitize_float_for_json(result.get("number_users", 0)), 
+                    "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
                 }
             ]
         }
     
-    def get_record_metrics_list(self, page=1, size=10, sort_by="downloads", sort_order=-1):
+    def get_record_metrics_list(self, page=1, size=10, sort_by="total_size_download", sort_order=-1):
         """Get metrics for a list of records"""
         # Determine sort field
-        sort_field = "download_count" if sort_by == "downloads" else "unique_users"
+        if sort_by == "total_size_download":
+            sort_field_db = "total_download_size"
+        elif sort_by == "users":
+            sort_field_db = "unique_users"
+        else: # Default or other sort fields
+            sort_field_db = "download_count" 
+
+        mongo_sort_order = DESCENDING if sort_order == -1 or str(sort_order).lower() == "desc" else ASCENDING
         
-        # Get paginated results
+        # Ensure projection includes all necessary fields from DB
+        projection = {
+            "_id": 0, "pdrid": 1, "ediid": 1, 
+            "total_download_size": 1, 
+            "unique_users": 1,        
+            "download_count": 1,     
+            "first_time_logged": 1, 
+            "last_time_logged": 1,
+            "record_download": 1     
+        }
+        
         results = list(self.metrics.find(
             {},
-            {"_id": 0, "pdrid": 1, "ediid": 1, "download_count": 1, 
-            "unique_users": 1, "first_time_logged": 1, "last_time_logged": 1,
-            "total_download_size": 1}
-        ).sort(sort_field, sort_order).skip((page - 1) * size).limit(size))
+            projection
+        ).sort(sort_field_db, mongo_sort_order).skip((page - 1) * size).limit(size))
         
         # Format results
         dataset_metrics = []
@@ -177,10 +95,10 @@ class MetricsCRUD:
                 "ediid": result.get("ediid"),
                 "first_time_logged": result.get("first_time_logged"),
                 "last_time_logged": result.get("last_time_logged"),
-                "total_size_download": result.get("total_download_size", 0),
-                "success_get": result.get("download_count", 0),
-                "number_users": result.get("unique_users", 0),
-                "record_download": result.get("download_count", 0)
+                "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
+                "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
+                "number_users": self._sanitize_float_for_json(result.get("number_users", 0)),
+                "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
             })
         
         # Get total count for pagination
@@ -193,68 +111,76 @@ class MetricsCRUD:
         }
     
     def get_repo_metrics(self):
-        """Get repository-level metrics directly from the database"""
-        # Get all repository metrics sorted by date (descending)
-        results = list(self.repo_metrics.find(
-            {}, 
-            {"_id": 0, "ip_list": 0}  # Exclude sensitive fields
-        ).sort([("timestamp", DESCENDING)]))
-        
-        # Return in the expected format
+        """Get repository‐level metrics directly from the database"""
+        results = list(self.repo_metrics
+            .find({}, {"_id": 0, "ip_list": 0})
+            .sort([("timestamp", DESCENDING)])
+        )
+
+        def sanitize(v, default=0):
+            if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+                return default
+            return v or default
+
+        # sanitize every numeric field before returning
+        for doc in results:
+            doc["downloads"]     = sanitize(doc.get("downloads"))
+            doc["unique_users"]  = sanitize(doc.get("unique_users"))
+
         return {
             "RepoMetricsCount": len(results),
-            "PageSize": 0,  # Since we're returning all metrics
+            "PageSize": 0,
             "RepoMetrics": results
         }
     
-    def get_total_unique_users(self):
-        """Get total unique users count"""
-        all_users = set()
-        for doc in self.unique_users.find({}, {"users": 1}):
-            all_users.update(doc.get("users", []))
+    def get_file_metrics(self, file_path, recordid=None):
+        """Get metrics for a specific file or all files for a record"""
         
-        return {"unique_users": len(all_users)}
-    
-    def get_file_metrics(self, file_path):
-        """Get metrics for a specific file"""
-        result = self.file_metrics.find_one({"filepath": file_path})
-        if not result:
+        if not file_path:
+            # Try multiple ways to find by record ID - return ALL files for this record
+            query_conditions = [
+                {"ediid": recordid},
+                {"pdrid": recordid}
+            ]
+            
+            # MDS-based lookups for record ID
+            if not recordid.startswith("ark:"):
+                query_conditions.extend([
+                    {"ediid": {"$regex": f".*{recordid}$"}},
+                    {"pdrid": {"$regex": f".*{recordid}$"}}
+                ])
+                
+            results = list(self.file_metrics.find({"$or": query_conditions}))
+        else:
+            # First try direct filepath lookup for a single file
+            result = self.file_metrics.find_one({"filepath": file_path})
+            
+            if result:
+                results = [result]  # Convert single result to list
+            else:
+                # If not found and file_path doesn't look like a real filepath, 
+                # treat it as a record identifier and return ALL files for that record
+                if not ("/" in file_path or "." in file_path):
+                    query_conditions = [
+                        {"ediid": file_path},
+                        {"pdrid": file_path}
+                    ]
+                    
+                    # Add MDS-based lookups if it doesn't start with ark:
+                    if not file_path.startswith("ark:"):
+                        query_conditions.extend([
+                            {"ediid": {"$regex": f".*{file_path}$"}},
+                            {"pdrid": {"$regex": f".*{file_path}$"}}
+                        ])
+                        
+                    results = list(self.file_metrics.find({"$or": query_conditions}))
+                else:
+                    results = []
+        
+        if not results:
             return None
         
-        # Format the result in the desired structure
-        return {
-            "FilesMetricsCount": 1,
-            "PageSize": 0,
-            "FilesMetrics": [
-                {
-                    "pdrid": result.get("pdrid"),
-                    "ediid": result.get("ediid"),
-                    "filepath": result.get("filepath"),
-                    "downloadURL": result.get("downloadURL"),
-                    "success_get": result.get("success_get", 0),
-                    "failure_get": result.get("failure_get", 0),
-                    "datacart_or_client": result.get("datacart_or_client", 0),
-                    "total_size_download": result.get("total_size_download", 0),
-                    "first_time_logged": result.get("first_time_logged"),
-                    "last_time_logged": result.get("last_time_logged")
-                }
-            ]
-        }
-
-    def get_file_metrics_list(self, sort_by="downloads", sort_order=-1):
-        """Get metrics for all files with sorting"""
-        # Determine sort field
-        sort_field = "success_get" if sort_by == "downloads" else "filepath"
-        
-        # Get all results with sorting
-        results = list(self.file_metrics.find(
-            {},
-            {"_id": 0, "pdrid": 1, "ediid": 1, "filepath": 1, "downloadURL": 1, 
-            "success_get": 1, "failure_get": 1, "datacart_or_client": 1,
-            "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
-        ).sort(sort_field, sort_order))
-        
-        # Format results
+        # Format ALL results in the desired structure
         files_metrics = []
         for result in results:
             files_metrics.append({
@@ -270,13 +196,55 @@ class MetricsCRUD:
                 "last_time_logged": result.get("last_time_logged")
             })
         
-        # Get total count of files
+        return {
+            "FilesMetricsCount": len(files_metrics),
+            "PageSize": 0,
+            "FilesMetrics": files_metrics
+        }
+    
+    def get_file_metrics_list(self, sort_by="total_size_download", sort_order=-1):
+        """Get metrics for all files with sorting"""
+        # Determine sort field
+        sort_field = "success_get" if sort_by == "total_size_download" else "filepath"
+        
+        # Get all results with sorting
+        results = list(self.file_metrics.find(
+            {},
+            {"_id": 0, "pdrid": 1, "ediid": 1, "filepath": 1, "downloadURL": 1, 
+            "success_get": 1, "failure_get": 1, "datacart_or_client": 1,
+            "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
+        ).sort(sort_field, sort_order))
+        
+        # Format results with sanitization
+        files_metrics = []
+        for result in results:
+            # Sanitize numeric values
+            def sanitize_number(value, default=0):
+                if isinstance(value, (int, float)):
+                    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                        return default
+                return value or default
+                
+            files_metrics.append({
+                "pdrid": result.get("pdrid"),
+                "ediid": result.get("ediid"),
+                "filepath": result.get("filepath"),
+                "downloadURL": result.get("downloadURL"),
+                "success_get": sanitize_number(result.get("success_get")),
+                "failure_get": sanitize_number(result.get("failure_get")),
+                "datacart_or_client": sanitize_number(result.get("datacart_or_client")),
+                "total_size_download": sanitize_number(result.get("total_size_download")),
+                "first_time_logged": result.get("first_time_logged"),
+                "last_time_logged": result.get("last_time_logged")
+            })
+        
         total = len(files_metrics)
         
         return {
             "FilesMetricsCount": total,
-            "PageSize": 0,  # 0 indicates all results are returned
+            "PageSize": 0,
             "FilesMetrics": files_metrics
         }
 
 metrics_crud = MetricsCRUD()
+

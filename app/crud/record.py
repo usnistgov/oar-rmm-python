@@ -1,6 +1,9 @@
+import time
 from app.crud.base import BaseCRUD
 from app.config import settings
 import logging
+
+from app.middleware.exceptions import InternalServerException, ResourceNotFoundException
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -9,57 +12,40 @@ logger = logging.getLogger(__name__)
 class RecordCRUD(BaseCRUD):
     def __init__(self):
         super().__init__(settings.RECORDS_COLLECTION)
-        
-        
-    def create(self, data: dict) -> dict:
-        """
-        Create a new record in the database.
-        
-        Args:
-            data (dict): The record data to create
-            
-        Returns:
-            dict: The newly created record
-        """
-        return super().create(data)
 
     def get(self, record_id: str) -> dict:
-        """
-        Get a single record by ID or ediid.
-        
-        Args:
-            record_id (str): The ID or ediid of the record to retrieve
-                
-        Returns:
-            dict: The record data without wrapper
-        """
+        """Get a single record by @ID, EDIID, or ARK identifier"""
+        start_time = time.time()
         try:
-            # First try to get by ObjectId
-            try:
-                from bson.objectid import ObjectId
-                # See if it's a valid ObjectId
-                if len(record_id) == 24 and all(c in '0123456789abcdefABCDEF' for c in record_id):
-                    result = super().get(record_id)
-                    if result and "ResultData" in result and result["ResultData"]:
-                        return result["ResultData"][0]  # Return just the record
-            except Exception as e:
-                logger.debug(f"Not an ObjectId, trying ediid: {e}")
-                
-            # Try to find by ediid
-            query_result = self.collection.find_one({"ediid": record_id})
+            # URL decode the record_id (convert %3A back to :)
+            from urllib.parse import unquote
+            decoded_id = unquote(record_id)
+            
+            # Try to find by any of the supported identifiers
+            query_result = self.collection.find_one({
+                "$or": [
+                    {"ediid": decoded_id},  # Try as EDIID
+                    {"@id": decoded_id},  # Try as ARK ID
+                    {"@id": f"ark:{decoded_id.split('ark:')[1]}" if "ark:" in decoded_id else decoded_id}  # Handle ark: prefix variations
+                ]
+                },
+                projection={"_id": 0}  # Exclude _id
+            )
+            
             if query_result:
-                # Convert _id to string
-                query_result["_id"] = str(query_result["_id"])
-                return query_result  # Return just the record
+                query_result["@id"] = str(query_result["@id"])
+                return {
+                    "ResultData": [query_result],
+                    "ResultCount": 1,
+                    "Metrics": {"ElapsedTime": time.time() - start_time}
+                }
+
+            raise ResourceNotFoundException(f"Record with ID {decoded_id} not found")
                 
-            # If we got here, record wasn't found
-            from app.middleware.exceptions import ResourceNotFoundException
-            raise ResourceNotFoundException(f"Record with ID/ediid {record_id} not found")
+        except ResourceNotFoundException:
+            raise
         except Exception as e:
-            if "ResourceNotFoundException" in str(type(e)):
-                raise
             logger.error(f"Error retrieving record: {e}")
-            from app.middleware.exceptions import InternalServerException
             raise InternalServerException(f"Failed to retrieve record: {str(e)}")
         
     def get_all(self, skip: int = 0, limit: int = 10) -> dict:
