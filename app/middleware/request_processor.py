@@ -146,7 +146,7 @@ class ProcessRequest:
             logger.info(f"After parameter processing - Logical Ops: {self.logical_ops}")
             
             self._validate_projections()
-            if self.adv_map or hasattr(self, 'array_conditions') or hasattr(self, 'field_and_conditions'):
+            if self.adv_map or hasattr(self, 'array_conditions') or hasattr(self, 'field_or_conditions'):
                 self._process_advanced_filters()
 
             return self._build_query(search_input, start_time)
@@ -187,60 +187,103 @@ class ProcessRequest:
             self.projections = None
 
     def _update_map(self, key: str, value: str) -> None:
-        # Handle topic.tag specially, regardless of whether it contains commas
+        """Update advanced query map with validation"""
+        # Security check
+        if '\x00' in value:
+            raise IllegalArgumentException(f"Invalid character in {key}: null bytes are not allowed")
+        
+        # Handle logical operators
+        if key == "logicalOp":
+            if value.lower() not in ["and", "or", "not"]:
+                raise IllegalArgumentException(f"Invalid logical operator: {value}")
+            self.logical_ops.append(value.lower())
+            return
+        
+       # Special handling for topic.tag - similar to Java implementation :)
         if key == 'topic.tag':
             import re
             # Split by commas if present, otherwise treat as single value
             values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
             
-            # Try both approaches to maximize matching:
+            # Create an $or of regex conditions - match anything before the colon
             or_conditions = []
-            
-            # 1. Case-insensitive regex on the dotted field (works if tag is a direct array)
             for val in values:
-                or_conditions.append({"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}})
+                # This matches "Public Safety" at the beginning, followed by colon or end of string
+                # Will match both "Public Safety" and "Public Safety: Public safety communications research"
+                or_conditions.append({"topic.tag": {"$regex": f"^{re.escape(val)}(:|$)", "$options": "i"}})
             
-            # 2. $elemMatch with regex (works if topic is an array of objects)
-            for val in values:
-                or_conditions.append({
-                    "topic": {
-                        "$elemMatch": {
-                            "tag": {"$regex": f"{re.escape(val)}", "$options": "i"}
-                        }
-                    }
-                })
+            # Create $or condition - this is equivalent to Java's Filters.in() with regex patterns
+            condition = {"$or": or_conditions}
             
             if not hasattr(self, 'field_or_conditions'):
                 self.field_or_conditions = []
             
-            # Use $or to try both approaches
-            self.field_or_conditions.append({"$or": or_conditions})
-            logger.info(f"Created flexible topic.tag match: {values}")
+            self.field_or_conditions.append(condition)
+            logger.info(f"Created topic.tag prefix match condition: {condition}")
             return
         
-        # Now handle other array fields with dot notation
+        # Handle array fields with dot notation
         if '.' in key and ',' in value and not (value.startswith('"') and value.endswith('"')):
             base_key, sub_key = key.split('.', 1)
             
-            # Skip topic.tag as we already handled it above :)
+            # Skip topic.tag as we already handled it above
             if key == 'topic.tag':
                 return
-                
-                
-            # For other array fields like components.@id etc.
+            
+            # For array fields like components.@id etc.
             if base_key in ['components', 'references']:
                 values = [val.strip() for val in value.split(',')]
-                conditions = []
+                patterns = []
+                
+                # Create case-insensitive regex patterns for each value
                 for val in values:
-                    conditions.append({
-                        base_key: {'$elemMatch': { sub_key: {'$regex': f'.*{val}.*', '$options': 'i'} }}
-                    })
+                    patterns.append({"$regex": f"{re.escape(val)}", "$options": "i"})
+                
+                # Create a condition using $elemMatch and $in
+                condition = {
+                    base_key: {
+                        "$elemMatch": {
+                            sub_key: {"$in": patterns}
+                        }
+                    }
+                }
                 
                 if not hasattr(self, 'array_conditions'):
                     self.array_conditions = []
-                self.array_conditions.extend(conditions)
-                logger.info(f"Created AND array conditions for {base_key}.{sub_key}: {conditions}")
+                self.array_conditions.append(condition)
+                logger.info(f"Created array condition for {base_key}.{sub_key}: {condition}")
                 return
+        
+        # For comma-separated values in regular fields
+        if ',' in value and not (value.startswith('"') and value.endswith('"')):
+            values = [val.strip() for val in value.split(',')]
+            patterns = []
+            
+            # Create case-insensitive regex patterns for each value
+            for val in values:
+                patterns.append({"$regex": f"^{re.escape(val)}$", "$options": "i"})
+            
+            # Use $in for matching any value
+            condition = {key: {"$in": patterns}}
+            
+            if not hasattr(self, 'field_or_conditions'):
+                self.field_or_conditions = []
+            self.field_or_conditions.append(condition)
+            logger.info(f"Created OR field condition for {key}: {condition}")
+            return
+        
+        # Regular value handling - build nested dictionary structure
+        parts = key.split('.')
+        current = self.adv_map
+        
+        # Navigate to the nested location
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        
+        # Set the value with regex for case-insensitivity
+        current[parts[-1]] = {"$regex": f"^{re.escape(value)}$", "$options": "i"}
 
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
@@ -280,11 +323,7 @@ class ProcessRequest:
 
         logger.info(f"Processing filters - Conditions: {search_conditions}")
         
-        # Always use AND logic for combining all conditions
-        if len(search_conditions) == 1:
-            self.bson_objs = search_conditions
-        else:
-            self.bson_objs = [{"$and": search_conditions}]
+        self.bson_objs = search_conditions 
 
     def _build_query(self, search_input: bool, start_time: float) -> Dict[str, Any]:
         """Build final MongoDB query"""
