@@ -100,10 +100,12 @@ class BaseCRUD:
                     projection=processed["projection"]
                 )
 
-                if processed["skip"]:
+                # Only apply skip if it's greater than 0
+                if processed["skip"] and processed["skip"] > 0:
                     cursor = cursor.skip(processed["skip"])
                 
-                if processed["limit"]:
+                # Only apply limit if it's specified and greater than 0 (None or 0 means return all results)
+                if processed["limit"] is not None and processed["limit"] > 0:
                     cursor = cursor.limit(processed["limit"])
 
                 if processed["sort"]:
@@ -123,12 +125,16 @@ class BaseCRUD:
                 if "_id" in doc:
                     doc["_id"] = str(doc["_id"])
 
+            # Get total count of matching documents
             count = self.collection.count_documents(processed["query"])
+            
+            # Determine PageSize based on whether pagination was used
+            page_size = processed["limit"] if processed["limit"] is not None and processed["limit"] > 0 else 0
             
             return {
                 "ResultData": docs,
                 "ResultCount": count,
-                "PageSize": processed["limit"],
+                "PageSize": page_size,  # 0 indicates all results returned
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
         except KeyWordNotFoundException as e:

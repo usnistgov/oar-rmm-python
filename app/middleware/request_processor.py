@@ -101,7 +101,9 @@ class ProcessRequest:
         
         try:
             self.validate_input(params)
-
+            # No pagination by default (return all results)
+            page_specified = False
+            size_specified = False
             # First process logicalOp if present
             if "logicalOp" in params:
                 self._update_map("logicalOp", params["logicalOp"])
@@ -127,10 +129,15 @@ class ProcessRequest:
                     self.page_number = int(value)
                 elif key == "page":
                     self.page = int(value)
-                    self.page_number = (self.page - 1) * (self.page_size or 10)
-                elif key == "size" or key == "limit":  # Handle both size and limit
+                    page_specified = True
+                    # Only calculate page_number if size was also specified
+                    if size_specified:
+                        self.page_number = (self.page - 1) * self.page_size
+                elif key == "size" or key == "limit":
                     self.page_size = int(value)
-                    if self.page > 1:  # Recalculate skip if page was set
+                    size_specified = True
+                    # Recalculate skip if page was already set
+                    if page_specified and self.page > 1:
                         self.page_number = (self.page - 1) * self.page_size
                 elif key == "sort.desc":
                     self._parse_sorting([(field, DESCENDING) for field in value.split(",")])
@@ -142,7 +149,18 @@ class ProcessRequest:
                     self.filter_lt = {"timestamp": {"$lt": value}}
                 elif key not in control_params:  # Only add to adv_map if not a control parameter
                     self._update_map(key, value)
-
+            if not page_specified and not size_specified:
+                self.page_size = 0  # 0 means return all results
+                self.page_number = 0
+            # If only page is specified without size, default to 10 per page
+            elif page_specified and not size_specified:
+                self.page_size = 10
+                self.page_number = (self.page - 1) * self.page_size
+            # If only size is specified without page, start from page 1
+            elif size_specified and not page_specified:
+                self.page = 1
+                self.page_number = 0
+                
             logger.info(f"After parameter processing - Logical Ops: {self.logical_ops}")
             
             self._validate_projections()
@@ -362,7 +380,7 @@ class ProcessRequest:
             "projection": self.projections,
             "sort": self.sort,
             "skip": self.page_number,
-            "limit": self.page_size if self.page_size > 0 else 10,
+            "limit": self.page_size if self.page_size > 0 else None,  # None means no limit
             "metrics": {"elapsed_time": time.time() - start_time}
         }
     
