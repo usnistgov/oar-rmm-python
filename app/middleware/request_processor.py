@@ -223,14 +223,24 @@ class ProcessRequest:
             # Split by commas if present, otherwise treat as single value
             values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
             
-            # Create an $or of regex conditions - match anything before the colon
+            # Create an $or of conditions for each value
             or_conditions = []
             for val in values:
-                # This matches "Public Safety" at the beginning, followed by colon or end of string
-                # Will match both "Public Safety" and "Public Safety: Public safety communications research"
-                or_conditions.append({"topic.tag": {"$regex": f"^{re.escape(val)}(:|$)", "$options": "i"}})
+                # For each tag value, create a sub-$or that searches:
+                # 1. In topic.tag field (prefix match)
+                # 2. Document-wide text search
+                # 3. Other text fields
+                tag_or_conditions = [
+                    {"topic.tag": {"$regex": f"^{re.escape(val)}(:|$)", "$options": "i"}},
+                    {"title": {"$regex": f"{re.escape(val)}", "$options": "i"}},
+                    {"description": {"$regex": f"{re.escape(val)}", "$options": "i"}},
+                    {"keyword": {"$regex": f"{re.escape(val)}", "$options": "i"}}
+                ]
+                
+                # Add each individual value as an OR condition
+                or_conditions.extend(tag_or_conditions)
             
-            # Create $or condition - this is equivalent to Java's Filters.in() with regex patterns
+            # Create the final condition
             condition = {"$or": or_conditions}
             
             if not hasattr(self, 'field_or_conditions'):
