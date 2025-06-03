@@ -231,7 +231,7 @@ class ProcessRequest:
                 # 2. Document-wide text search
                 # 3. Other text fields
                 tag_or_conditions = [
-                    {"topic.tag": {"$regex": f"^{re.escape(val)}(:|$)", "$options": "i"}},
+                    {"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}},
                     {"title": {"$regex": f"{re.escape(val)}", "$options": "i"}},
                     {"description": {"$regex": f"{re.escape(val)}", "$options": "i"}},
                     {"keyword": {"$regex": f"{re.escape(val)}", "$options": "i"}}
