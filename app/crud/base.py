@@ -119,7 +119,16 @@ class BaseCRUD:
                 raise InternalServerException(f"Error executing MongoDB query: {str(e)}")
             
             if not docs:
-                raise KeyWordNotFoundException("No documents found matching the search criteria")
+                # raise KeyWordNotFoundException("No documents found matching the search criteria")
+                # MARK: @Mehdi: Instead of raising an exception, return an empty result set to match current
+                # implementation behavior
+                logger.warning("No documents found matching the search criteria")
+                return {
+                    "ResultData": [],
+                    "ResultCount": 0,
+                    "PageSize": processed["limit"] if processed["limit"] is not None else 0,
+                    "Metrics": {"ElapsedTime": time.time() - start_time}
+                }
                 
             for doc in docs:
                 if "_id" in doc:

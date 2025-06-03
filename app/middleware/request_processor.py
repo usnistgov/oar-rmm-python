@@ -294,17 +294,19 @@ class ProcessRequest:
         if ',' in value and not (value.startswith('"') and value.endswith('"')):
             import re
             values = [val.strip() for val in value.split(',') if val.strip()]
-            patterns = []
             
+            # For comma-separated values, create individual regex conditions
+            or_conditions = []
             for val in values:
                 # Use partial match for @type fields to handle prefixes like "nrdp:DataPublication"
                 if key == '@type':
-                    patterns.append({"$regex": f"{re.escape(val)}", "$options": "i"})
+                    or_conditions.append({key: {"$regex": f"{re.escape(val)}", "$options": "i"}})
                 else:
                     # Use exact match for other fields
-                    patterns.append({"$regex": f"^{re.escape(val)}$", "$options": "i"})
+                    or_conditions.append({key: {"$regex": f"^{re.escape(val)}$", "$options": "i"}})
             
-            condition = {key: {"$in": patterns}}
+            # Create a single OR condition for this field
+            condition = {"$or": or_conditions}
             
             if not hasattr(self, 'field_or_conditions'):
                 self.field_or_conditions = []
