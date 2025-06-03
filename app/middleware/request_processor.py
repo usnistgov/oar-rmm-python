@@ -217,64 +217,72 @@ class ProcessRequest:
             self.logical_ops.append(value.lower())
             return
         
-       # Special handling for topic.tag - similar to Java implementation :)
+        # Special handling for topic.tag
         if key == 'topic.tag':
             import re
-            # Split by commas if present, otherwise treat as single value
             values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
             
-            # Create an $or of conditions for each value
-            or_conditions = []
+            # Create case-insensitive regex patterns for topic.tag field only
+            patterns = []
             for val in values:
-                # For each tag value, create a sub-$or that searches:
-                # 1. In topic.tag field (prefix match)
-                # 2. Document-wide text search
-                # 3. Other text fields
-                tag_or_conditions = [
-                    {"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}},
-                    {"title": {"$regex": f"{re.escape(val)}", "$options": "i"}},
-                    {"description": {"$regex": f"{re.escape(val)}", "$options": "i"}},
-                    {"keyword": {"$regex": f"{re.escape(val)}", "$options": "i"}}
-                ]
-                
-                # Add each individual value as an OR condition
-                or_conditions.extend(tag_or_conditions)
+                patterns.append({"$regex": f"^{re.escape(val)}$", "$options": "i"})
             
-            # Create the final condition
-            condition = {"$or": or_conditions}
+            condition = {"topic.tag": {"$in": patterns}}
             
             if not hasattr(self, 'field_or_conditions'):
                 self.field_or_conditions = []
             
             self.field_or_conditions.append(condition)
-            logger.info(f"Created topic.tag prefix match condition: {condition}")
+            logger.info(f"Created topic.tag match condition: {condition}")
             return
         
-        # Handle array fields with dot notation
-        if '.' in key and ',' in value and not (value.startswith('"') and value.endswith('"')):
+        # Handle array fields with dot notation (like components.@type)
+        if '.' in key:
             base_key, sub_key = key.split('.', 1)
             
-            # Skip topic.tag as we already handled it above
-            if key == 'topic.tag':
-                return
-            
-            # For array fields like components.@id etc.
-            if base_key in ['components', 'references']:
-                values = [val.strip() for val in value.split(',')]
-                patterns = []
+            # For array fields that contain objects
+            if base_key in ['components', 'references', 'topic', 'authors', 'contactPoint']:
+                import re
                 
-                # Create case-insensitive regex patterns for each value
-                for val in values:
-                    patterns.append({"$regex": f"{re.escape(val)}", "$options": "i"})
-                
-                # Create a condition using $elemMatch and $in
-                condition = {
-                    base_key: {
-                        "$elemMatch": {
-                            sub_key: {"$in": patterns}
+                if ',' in value and not (value.startswith('"') and value.endswith('"')):
+                    # Handle comma-separated values for OR logic
+                    values = [val.strip() for val in value.split(',') if val.strip()]
+                    
+                    # Create individual conditions for each value
+                    or_conditions = []
+                    for val in values:
+                        if sub_key == '@type':
+                            # Use partial match for @type fields to handle prefixes
+                            pattern = {"$regex": f"{re.escape(val)}", "$options": "i"}
+                        else:
+                            # Use partial match for other fields
+                            pattern = {"$regex": f"{re.escape(val)}", "$options": "i"}
+                        
+                        or_conditions.append({
+                            base_key: {
+                                "$elemMatch": {
+                                    sub_key: pattern
+                                }
+                            }
+                        })
+                    
+                    # Create a single OR condition
+                    condition = {"$or": or_conditions}
+                else:
+                    # Handle single value
+                    if sub_key == '@type':
+                        # Use partial match for @type to handle prefixes
+                        pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
+                    else:
+                        pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
+                    
+                    condition = {
+                        base_key: {
+                            "$elemMatch": {
+                                sub_key: pattern
+                            }
                         }
                     }
-                }
                 
                 if not hasattr(self, 'array_conditions'):
                     self.array_conditions = []
@@ -282,16 +290,20 @@ class ProcessRequest:
                 logger.info(f"Created array condition for {base_key}.{sub_key}: {condition}")
                 return
         
-        # For comma-separated values in regular fields
+        # Handle direct field queries (like @type=DataPublication)
         if ',' in value and not (value.startswith('"') and value.endswith('"')):
-            values = [val.strip() for val in value.split(',')]
+            import re
+            values = [val.strip() for val in value.split(',') if val.strip()]
             patterns = []
             
-            # Create case-insensitive regex patterns for each value
             for val in values:
-                patterns.append({"$regex": f"^{re.escape(val)}$", "$options": "i"})
+                # Use partial match for @type fields to handle prefixes like "nrdp:DataPublication"
+                if key == '@type':
+                    patterns.append({"$regex": f"{re.escape(val)}", "$options": "i"})
+                else:
+                    # Use exact match for other fields
+                    patterns.append({"$regex": f"^{re.escape(val)}$", "$options": "i"})
             
-            # Use $in for matching any value
             condition = {key: {"$in": patterns}}
             
             if not hasattr(self, 'field_or_conditions'):
@@ -300,18 +312,25 @@ class ProcessRequest:
             logger.info(f"Created OR field condition for {key}: {condition}")
             return
         
-        # Regular value handling - build nested dictionary structure
+        # Handle single values for direct fields
+        import re
+        if key == '@type':
+            # Use partial match for @type to handle prefixes like "nrdp:DataPublication"
+            pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
+        else:
+            # Use exact match for other single values
+            pattern = {"$regex": f"^{re.escape(value)}$", "$options": "i"}
+        
+        # Build nested dictionary structure for dot notation
         parts = key.split('.')
         current = self.adv_map
         
-        # Navigate to the nested location
         for part in parts[:-1]:
             if part not in current:
                 current[part] = {}
             current = current[part]
         
-        # Set the value with regex for case-insensitivity
-        current[parts[-1]] = {"$regex": f"^{re.escape(value)}$", "$options": "i"}
+        current[parts[-1]] = pattern
 
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
