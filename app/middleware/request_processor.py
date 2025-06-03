@@ -222,15 +222,15 @@ class ProcessRequest:
             import re
             values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
             
-            # Create case-insensitive regex patterns for topic.tag field
+            # Create case-insensitive regex patterns for topic.tag field - ALLOW SUBSTRING MATCHES
             if len(values) == 1:
-                # Single value - use direct regex
-                condition = {"topic.tag": {"$regex": f"^{re.escape(values[0])}$", "$options": "i"}}
+                # Single value - use substring regex (remove ^ and $ anchors)
+                condition = {"topic.tag": {"$regex": f"{re.escape(values[0])}", "$options": "i"}}
             else:
-                # Multiple values - use $or instead of $in with regex objects
+                # Multiple values - use $or with substring matches
                 or_conditions = []
                 for val in values:
-                    or_conditions.append({"topic.tag": {"$regex": f"^{re.escape(val)}$", "$options": "i"}})
+                    or_conditions.append({"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}})
                 condition = {"$or": or_conditions}
             
             if not hasattr(self, 'field_or_conditions'):
