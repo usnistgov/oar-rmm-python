@@ -2,7 +2,7 @@ import time
 from app.crud.base import BaseCRUD
 from app.config import settings
 import logging
-
+import re
 from app.middleware.exceptions import InternalServerException, ResourceNotFoundException
 
 # Configure logging
@@ -16,24 +16,33 @@ class RecordCRUD(BaseCRUD):
     def get(self, record_id: str) -> dict:
         """Get a single record by @ID, EDIID, or ARK identifier"""
         start_time = time.time()
+        print('Getting record with ID:', record_id)
         try:
             # URL decode the record_id (convert %3A back to :)
             from urllib.parse import unquote
             decoded_id = unquote(record_id)
             
-            # Try to find by any of the supported identifiers
-            query_result = self.collection.find_one({
-                "$or": [
-                    {"ediid": decoded_id},  # Try as EDIID
-                    {"@id": decoded_id},  # Try as ARK ID
-                    {"@id": f"ark:{decoded_id.split('ark:')[1]}" if "ark:" in decoded_id else decoded_id}  # Handle ark: prefix variations
-                ]
-                },
-                projection={"_id": 0}  # Exclude _id
+            # Build query conditions similar to metrics lookup
+            query_conditions = [
+                {"ediid": decoded_id},
+                {"@id": decoded_id}
+            ]
+            
+            # If the ID doesn't start with "ark:", try additional patterns
+            if not decoded_id.startswith("ark:"):
+                query_conditions.extend([
+                    {"@id": f"ark:{decoded_id}"},  # Try with ark: prefix
+                    {"ediid": {"$regex": f".*{re.escape(decoded_id)}$"}},  # Match at end of ediid
+                    {"@id": {"$regex": f".*{re.escape(decoded_id)}$"}}     # Match at end of @id
+                ])
+            
+            # Execute the query
+            query_result = self.collection.find_one(
+                {"$or": query_conditions},
+                {"_id": 0}  # Use dict format for projection
             )
             
             if query_result:
-                query_result["@id"] = str(query_result["@id"])
                 return {
                     "ResultData": [query_result],
                     "ResultCount": 1,
@@ -41,7 +50,7 @@ class RecordCRUD(BaseCRUD):
                 }
 
             raise ResourceNotFoundException(f"Record with ID {decoded_id} not found")
-                
+                    
         except ResourceNotFoundException:
             raise
         except Exception as e:
