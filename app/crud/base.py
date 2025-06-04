@@ -41,7 +41,11 @@ class BaseCRUD:
             cursor = self.collection.find(
                 filter=filters,
                 projection={"_id": 0}
-            ).skip(skip).limit(limit)
+            ).skip(skip)
+            
+            # Only apply limit if it's greater than 0 (0 means return all)
+            if limit > 0:
+                cursor = cursor.limit(limit)
             
             docs = list(cursor)
             
@@ -53,7 +57,7 @@ class BaseCRUD:
             return {
                 "ResultData": docs,
                 "ResultCount": count,
-                "PageSize": limit,
+                "PageSize": limit if limit > 0 else 0,  # 0 indicates all results returned
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
         except KeyWordNotFoundException as e:

@@ -16,7 +16,7 @@ router = APIRouter(
 @router.get("/fields")
 async def search_fields(request: Request):
     # Fetch all fields directly without pagination
-    fields = field_crud.get_all()
+    fields = field_crud.get_all(limit=0)
     # Return just the list, no extra metadata
     return fields
 
