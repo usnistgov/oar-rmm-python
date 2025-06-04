@@ -34,6 +34,11 @@ class ProcessRequest:
         self.search_phrase_filter = None
         self.filter_gte = None
         self.filter_lt = None
+        # Reset any advanced query conditions
+        if hasattr(self, 'array_conditions'):
+            delattr(self, 'array_conditions')
+        if hasattr(self, 'field_or_conditions'):
+            delattr(self, 'field_or_conditions')
 
     def validate_input(self, params: Dict[str, Any]) -> None:
         """Validate request input parameters"""
@@ -96,7 +101,9 @@ class ProcessRequest:
         
         try:
             self.validate_input(params)
-
+            # No pagination by default (return all results)
+            page_specified = False
+            size_specified = False
             # First process logicalOp if present
             if "logicalOp" in params:
                 self._update_map("logicalOp", params["logicalOp"])
@@ -122,10 +129,15 @@ class ProcessRequest:
                     self.page_number = int(value)
                 elif key == "page":
                     self.page = int(value)
-                    self.page_number = (self.page - 1) * (self.page_size or 10)
-                elif key == "size" or key == "limit":  # Handle both size and limit
+                    page_specified = True
+                    # Only calculate page_number if size was also specified
+                    if size_specified:
+                        self.page_number = (self.page - 1) * self.page_size
+                elif key == "size" or key == "limit":
                     self.page_size = int(value)
-                    if self.page > 1:  # Recalculate skip if page was set
+                    size_specified = True
+                    # Recalculate skip if page was already set
+                    if page_specified and self.page > 1:
                         self.page_number = (self.page - 1) * self.page_size
                 elif key == "sort.desc":
                     self._parse_sorting([(field, DESCENDING) for field in value.split(",")])
@@ -137,11 +149,22 @@ class ProcessRequest:
                     self.filter_lt = {"timestamp": {"$lt": value}}
                 elif key not in control_params:  # Only add to adv_map if not a control parameter
                     self._update_map(key, value)
-
+            if not page_specified and not size_specified:
+                self.page_size = 0  # 0 means return all results
+                self.page_number = 0
+            # If only page is specified without size, default to 10 per page
+            elif page_specified and not size_specified:
+                self.page_size = 10
+                self.page_number = (self.page - 1) * self.page_size
+            # If only size is specified without page, start from page 1
+            elif size_specified and not page_specified:
+                self.page = 1
+                self.page_number = 0
+                
             logger.info(f"After parameter processing - Logical Ops: {self.logical_ops}")
             
             self._validate_projections()
-            if self.adv_map:
+            if self.adv_map or hasattr(self, 'array_conditions') or hasattr(self, 'field_or_conditions'):
                 self._process_advanced_filters()
 
             return self._build_query(search_input, start_time)
@@ -183,101 +206,250 @@ class ProcessRequest:
 
     def _update_map(self, key: str, value: str) -> None:
         """Update advanced query map with validation"""
-        # Security checks
+        # Security check
         if '\x00' in value:
             raise IllegalArgumentException(f"Invalid character in {key}: null bytes are not allowed")
         
-        # Regular update logic
+        # Handle logical operators
         if key == "logicalOp":
             if value.lower() not in ["and", "or", "not"]:
                 raise IllegalArgumentException(f"Invalid logical operator: {value}")
-            self.logical_ops.append(value)
+            self.logical_ops.append(value.lower())
+            return
+        
+        # Special handling for topic.tag
+        if key == 'topic.tag':
+            import re
+            values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
+            
+            # Create case-insensitive regex patterns for topic.tag field only
+            if len(values) == 1:
+                condition = {"topic.tag": {"$regex": f"{re.escape(values[0])}", "$options": "i"}}
+            else:
+                or_conditions = []
+                for val in values:
+                    or_conditions.append({"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}})
+                condition = {"$or": or_conditions}
+            
+            if not hasattr(self, 'field_or_conditions'):
+                self.field_or_conditions = []
+            
+            self.field_or_conditions.append(condition)
+            logger.info(f"Created topic.tag match condition: {condition}")
+            return
+        
+        # Handle array fields with dot notation (like components.@type) 
+        # @Mehdi: contactPoint is NOT an array, so handle it separately
+        if '.' in key:
+            base_key, sub_key = key.split('.', 1)
+            
+            # For array fields that contain objects (contactPoint is NOT an array)
+            if base_key in ['components', 'references', 'topic', 'authors']:
+                import re
+                
+                if ',' in value and not (value.startswith('"') and value.endswith('"')):
+                    # Handle comma-separated values for OR logic
+                    values = [val.strip() for val in value.split(',') if val.strip()]
+                    
+                    # Create individual conditions for each value
+                    or_conditions = []
+                    for val in values:
+                        if sub_key == '@type':
+                            # Use partial match for @type fields to handle prefixes
+                            pattern = {"$regex": f"{re.escape(val)}", "$options": "i"}
+                        else:
+                            # Use partial match for other fields
+                            pattern = {"$regex": f"{re.escape(val)}", "$options": "i"}
+                        
+                        or_conditions.append({
+                            base_key: {
+                                "$elemMatch": {
+                                    sub_key: pattern
+                                }
+                            }
+                        })
+                    
+                    # Create a single OR condition
+                    condition = {"$or": or_conditions}
+                else:
+                    # Handle single value
+                    if sub_key == '@type':
+                        # Use partial match for @type to handle prefixes
+                        pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
+                    else:
+                        pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
+                    
+                    condition = {
+                        base_key: {
+                            "$elemMatch": {
+                                sub_key: pattern
+                            }
+                        }
+                    }
+                
+                if not hasattr(self, 'array_conditions'):
+                    self.array_conditions = []
+                self.array_conditions.append(condition)
+                logger.info(f"Created array condition for {base_key}.{sub_key}: {condition}")
+                return
+            
+            # Handle contactPoint (single object, not array) and other dot notation fields
+            if ',' in value and not (value.startswith('"') and value.endswith('"')):
+                import re
+                values = [val.strip() for val in value.split(',') if val.strip()]
+                
+                # For comma-separated values, create individual regex conditions
+                or_conditions = []
+                for val in values:
+                    or_conditions.append({key: {"$regex": f"{re.escape(val)}", "$options": "i"}})
+                
+                # Create a single OR condition for this field
+                condition = {"$or": or_conditions}
+                
+                if not hasattr(self, 'field_or_conditions'):
+                    self.field_or_conditions = []
+                self.field_or_conditions.append(condition)
+                logger.info(f"Created OR field condition for {key}: {condition}")
+                return
+            else:
+                # Handle single dot notation field (like contactPoint.fn)
+                import re
+                pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
+                
+                # Build nested dictionary structure for dot notation
+                parts = key.split('.')
+                current = self.adv_map
+                
+                for part in parts[:-1]:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+                
+                current[parts[-1]] = pattern
+                return
+        
+        # Handle direct field queries (like @type=DataPublication)
+        if ',' in value and not (value.startswith('"') and value.endswith('"')):
+            import re
+            values = [val.strip() for val in value.split(',') if val.strip()]
+            
+            # For comma-separated values, create individual regex conditions
+            or_conditions = []
+            for val in values:
+                # Use partial match for @type fields to handle prefixes like "nrdp:DataPublication"
+                if key == '@type':
+                    or_conditions.append({key: {"$regex": f"{re.escape(val)}", "$options": "i"}})
+                else:
+                    # Use exact match for other fields
+                    or_conditions.append({key: {"$regex": f"^{re.escape(val)}$", "$options": "i"}})
+            
+            # Create a single OR condition for this field
+            condition = {"$or": or_conditions}
+            
+            if not hasattr(self, 'field_or_conditions'):
+                self.field_or_conditions = []
+            self.field_or_conditions.append(condition)
+            logger.info(f"Created OR field condition for {key}: {condition}")
+            return
+        
+        # Handle single values for direct fields
+        import re
+        if key == '@type':
+            # Use partial match for @type to handle prefixes like "nrdp:DataPublication"
+            pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
         else:
-            if key not in self.adv_map:
-                self.adv_map[key] = []
-            self.adv_map[key].append(value)
+            # Use exact match for other single values
+            pattern = {"$regex": f"^{re.escape(value)}$", "$options": "i"}
+        
+        # Build nested dictionary structure for dot notation
+        parts = key.split('.')
+        current = self.adv_map
+        
+        for part in parts[:-1]:
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+        
+        current[parts[-1]] = pattern
 
     def _process_advanced_filters(self) -> None:
         """Process advanced query filters"""
         search_conditions = []
+
+        # Add array conditions (these can be either AND or OR depending on the field)
+        if hasattr(self, 'array_conditions'):
+            search_conditions.extend(self.array_conditions)
         
-        # Create a condition for each field-value pair
-        for key, values in self.adv_map.items():
-            if key != "logicalOp":
-                for value in values:
-                    # Second safety check for null bytes
-                    if '\x00' in value:
-                        logger.warning(f"Null byte detected in regex value for {key}: {value}")
-                        raise IllegalArgumentException(f"Invalid character in parameter {key}")
-                    
-                    # Check for potential regex DoS patterns
-                    if len(value) > 100 and ('.*' in value or '.+' in value):
-                        logger.warning(f"Potentially malicious regex detected: {value}")
-                        raise IllegalArgumentException(f"Query too complex for {key}")
-                        
+        # Add field OR conditions
+        if hasattr(self, 'field_or_conditions'):
+            search_conditions.extend(self.field_or_conditions)
+        
+        # Add regular field conditions
+        def process_nested_dict(prefix, nested_dict):
+            for key, value in nested_dict.items():
+                full_key = f"{prefix}.{key}" if prefix else key
+                
+                if isinstance(value, dict):
+                    # Check if this is a MongoDB operator dict (like $in)
+                    if any(k.startswith('$') for k in value.keys()):
+                        search_conditions.append({full_key: value})
+                    else:
+                        # Recurse into nested dictionary
+                        process_nested_dict(full_key, value)
+                else:
+                    # Handle single string values
                     search_conditions.append({
-                        key: {
-                            "$regex": value,
-                            "$options": "i"
-                        }
+                        full_key: {"$regex": value, "$options": "i"}
                     })
+        
+        # Process the entire adv_map
+        process_nested_dict("", self.adv_map)
         
         if not search_conditions:
             return
 
-        # Log the state before processing
         logger.info(f"Processing filters - Conditions: {search_conditions}")
-        logger.info(f"Processing filters - Logical Ops: {self.logical_ops}")
-
-        if len(search_conditions) == 1:
-            self.bson_objs = search_conditions
-            return
-
-        # Explicitly check logical operator
-        logical_op = self.logical_ops[0].lower() if self.logical_ops else "and"
-        logger.info(f"Using logical operator: {logical_op}")
-
-        if logical_op == "or":
-            logger.info(f"Creating OR query with conditions: {search_conditions}")
-            self.bson_objs = [{"$or": search_conditions}]
-        else:
-            logger.info(f"Creating AND query with conditions: {search_conditions}")
-            self.bson_objs = [{"$and": search_conditions}]
-
+        
+        self.bson_objs = search_conditions 
 
     def _build_query(self, search_input: bool, start_time: float) -> Dict[str, Any]:
         """Build final MongoDB query"""
         query = {}
         
+        # Combine all conditions properly
+        conditions = []
+        
         # Add text search if present
         if self.search_phrase_filter:
-            query.update(self.search_phrase_filter)
+            conditions.append(self.search_phrase_filter)
 
         # Add field conditions
         if self.bson_objs:
-            if len(self.bson_objs) == 1:
-                # Single condition or already grouped conditions
-                query.update(self.bson_objs[0])
-            else:
-                # Multiple separate conditions
-                query.update({"$and": self.bson_objs})
+            conditions.extend(self.bson_objs)
 
         # Add date filters if present
         if self.filter_gte:
-            query.update(self.filter_gte)
+            conditions.append(self.filter_gte)
         if self.filter_lt:
-            query.update(self.filter_lt)
+            conditions.append(self.filter_lt)
 
+        # Combine all conditions with $and
+        if len(conditions) == 1:
+            query = conditions[0]
+        elif len(conditions) > 1:
+            query = {"$and": conditions}
+
+        
         logger.info(f"Final MongoDB Query: {query}")
-        logger.info(f"Projections: {self.projections}")
-        logger.info(f"Sort: {self.sort}")
+        logger.info(f"Query conditions count: {len(conditions)}")
+        logger.info(f"Individual conditions: {conditions}")  
 
         return {
             "query": query,
             "projection": self.projections,
             "sort": self.sort,
             "skip": self.page_number,
-            "limit": self.page_size if self.page_size > 0 else 10,
+            "limit": self.page_size if self.page_size > 0 else None,  # None means no limit
             "metrics": {"elapsed_time": time.time() - start_time}
         }
     

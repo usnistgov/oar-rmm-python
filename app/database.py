@@ -134,8 +134,16 @@ def create_collection_indexes():
                     db[settings.RESOURCES_COLLECTION].create_index([("apiUrl", ASCENDING)])
                     logger.info("Created specific indexes for APIs collection")
                 elif collection == settings.RECORDS_COLLECTION:
-                    db[settings.RECORDS_COLLECTION].create_index([("doi", ASCENDING)])
+                    db[settings.RECORDS_COLLECTION].create_index([
+                    ("title", TEXT), 
+                    ("description", TEXT), 
+                    ("keyword", TEXT),
+                    ("topic.tag", TEXT)
+                    ], name="text_search_idx")
+                
                     db[settings.RECORDS_COLLECTION].create_index([("ediid", ASCENDING)])
+                    db[settings.RECORDS_COLLECTION].create_index([("doi", ASCENDING)])
+                    db[settings.RECORDS_COLLECTION].create_index([("@id", ASCENDING)])
                     logger.info("Created specific indexes for records collection")
                     
             except Exception as e:
