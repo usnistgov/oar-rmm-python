@@ -222,12 +222,10 @@ class ProcessRequest:
             import re
             values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
             
-            # Create case-insensitive regex patterns for topic.tag field - ALLOW SUBSTRING MATCHES
+            # Create case-insensitive regex patterns for topic.tag field only
             if len(values) == 1:
-                # Single value - use substring regex (remove ^ and $ anchors)
                 condition = {"topic.tag": {"$regex": f"{re.escape(values[0])}", "$options": "i"}}
             else:
-                # Multiple values - use $or with substring matches
                 or_conditions = []
                 for val in values:
                     or_conditions.append({"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}})
@@ -240,12 +238,13 @@ class ProcessRequest:
             logger.info(f"Created topic.tag match condition: {condition}")
             return
         
-        # Handle array fields with dot notation (like components.@type)
+        # Handle array fields with dot notation (like components.@type) 
+        # @Mehdi: contactPoint is NOT an array, so handle it separately
         if '.' in key:
             base_key, sub_key = key.split('.', 1)
             
-            # For array fields that contain objects
-            if base_key in ['components', 'references', 'topic', 'authors', 'contactPoint']:
+            # For array fields that contain objects (contactPoint is NOT an array)
+            if base_key in ['components', 'references', 'topic', 'authors']:
                 import re
                 
                 if ',' in value and not (value.startswith('"') and value.endswith('"')):
@@ -292,6 +291,41 @@ class ProcessRequest:
                     self.array_conditions = []
                 self.array_conditions.append(condition)
                 logger.info(f"Created array condition for {base_key}.{sub_key}: {condition}")
+                return
+            
+            # Handle contactPoint (single object, not array) and other dot notation fields
+            if ',' in value and not (value.startswith('"') and value.endswith('"')):
+                import re
+                values = [val.strip() for val in value.split(',') if val.strip()]
+                
+                # For comma-separated values, create individual regex conditions
+                or_conditions = []
+                for val in values:
+                    or_conditions.append({key: {"$regex": f"{re.escape(val)}", "$options": "i"}})
+                
+                # Create a single OR condition for this field
+                condition = {"$or": or_conditions}
+                
+                if not hasattr(self, 'field_or_conditions'):
+                    self.field_or_conditions = []
+                self.field_or_conditions.append(condition)
+                logger.info(f"Created OR field condition for {key}: {condition}")
+                return
+            else:
+                # Handle single dot notation field (like contactPoint.fn)
+                import re
+                pattern = {"$regex": f"{re.escape(value)}", "$options": "i"}
+                
+                # Build nested dictionary structure for dot notation
+                parts = key.split('.')
+                current = self.adv_map
+                
+                for part in parts[:-1]:
+                    if part not in current:
+                        current[part] = {}
+                    current = current[part]
+                
+                current[parts[-1]] = pattern
                 return
         
         # Handle direct field queries (like @type=DataPublication)
