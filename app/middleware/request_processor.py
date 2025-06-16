@@ -34,6 +34,7 @@ class ProcessRequest:
         self.search_phrase_filter = None
         self.filter_gte = None
         self.filter_lt = None
+        self.logical_query = {}
         # Reset any advanced query conditions
         if hasattr(self, 'array_conditions'):
             delattr(self, 'array_conditions')
@@ -74,7 +75,11 @@ class ProcessRequest:
             if '../' in str_value or '..%2f' in str_value.lower():
                 logger.warning(f"Path traversal attempt detected in parameter {key}: {str_value}")
                 raise IllegalArgumentException(f"Invalid character sequence in parameter {key}")
-                
+            
+            if key == "logicalOp":
+                valid_logical_ops = ["AND", "OR", "and", "or"]
+                if str_value not in valid_logical_ops:
+                    raise IllegalArgumentException(f"Invalid logical operator: {str_value}. Must be 'AND' or 'OR'")                
             # Existing validation
             if key in ["exclude", "include", "sort_desc", "sort_asc"]:
                 if isinstance(value, str) and restricted_pattern.search(value):
@@ -85,6 +90,8 @@ class ProcessRequest:
                 except ValueError:
                     raise IllegalArgumentException(f"{key} must be an integer")
 
+    
+    
     def process_search_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Process and build MongoDB query from request parameters"""
         self.reset_state()
@@ -93,25 +100,41 @@ class ProcessRequest:
 
         # Define known pagination/control parameters
         control_params = {
-            "searchphrase", "exclude", "include", 
-            "skip", "limit", "size", "page",  
-            "sort.desc", "sort.asc", 
+            "searchphrase", "exclude", "include",
+            "skip", "limit", "size", "page",
+            "sort.desc", "sort.asc",
             "datefrom", "dateto", "logicalOp"
         }
-        
+
         try:
             self.validate_input(params)
-            # No pagination by default (return all results)
+            
+            # Check if we have multiple field parameters (indicating potential logical operations)
+            field_params = {k: v for k, v in params.items() 
+                        if k not in control_params and v}
+            
+            # Handle logical operations and field grouping
+            has_logical_ops = "logicalOp" in params
+            has_multiple_fields = len(field_params) > 1
+            logical_query = {}
+            
+            # Use logical processing if we have logicalOp OR multiple field parameters
+            if has_logical_ops or has_multiple_fields:
+                # Group fields by their logical operators
+                field_groups = self._group_fields_by_logical_op(params)
+                logical_query = self._build_logical_query(field_groups)
+                
+                # Set a flag to skip individual field processing
+                use_logical_processing = True
+            else:
+                use_logical_processing = False
+            
+            # Process regular parameters
             page_specified = False
             size_specified = False
-            # First process logicalOp if present
-            if "logicalOp" in params:
-                self._update_map("logicalOp", params["logicalOp"])
-                logger.info(f"Setting logical operator: {params['logicalOp']}")
-
-            # Then process other parameters
+            
             for key, value in params.items():
-                if not value or key == "logicalOp":  # Skip empty values and already processed logicalOp
+                if not value or key == "logicalOp":
                     continue
 
                 if key == "searchphrase":
@@ -130,13 +153,11 @@ class ProcessRequest:
                 elif key == "page":
                     self.page = int(value)
                     page_specified = True
-                    # Only calculate page_number if size was also specified
                     if size_specified:
                         self.page_number = (self.page - 1) * self.page_size
                 elif key == "size" or key == "limit":
                     self.page_size = int(value)
                     size_specified = True
-                    # Recalculate skip if page was already set
                     if page_specified and self.page > 1:
                         self.page_number = (self.page - 1) * self.page_size
                 elif key == "sort.desc":
@@ -147,24 +168,27 @@ class ProcessRequest:
                     self.filter_gte = {"timestamp": {"$gte": value}}
                 elif key == "dateto":
                     self.filter_lt = {"timestamp": {"$lt": value}}
-                elif key not in control_params:  # Only add to adv_map if not a control parameter
+                elif key not in control_params and not use_logical_processing:
+                    # Only process individual fields if not using logical operations
                     self._update_map(key, value)
+
+            # Handle pagination defaults
             if not page_specified and not size_specified:
-                self.page_size = 0  # 0 means return all results
+                self.page_size = 0
                 self.page_number = 0
-            # If only page is specified without size, default to 10 per page
             elif page_specified and not size_specified:
                 self.page_size = 10
                 self.page_number = (self.page - 1) * self.page_size
-            # If only size is specified without page, start from page 1
             elif size_specified and not page_specified:
                 self.page = 1
                 self.page_number = 0
-                
-            logger.info(f"After parameter processing - Logical Ops: {self.logical_ops}")
-            
+
+            # If using logical operations, set the logical query
+            if logical_query:
+                self.logical_query = logical_query
+
             self._validate_projections()
-            if self.adv_map or hasattr(self, 'array_conditions') or hasattr(self, 'field_or_conditions'):
+            if self.adv_map or hasattr(self, 'array_conditions') or hasattr(self, 'field_or_conditions') or hasattr(self, 'logical_query'):
                 self._process_advanced_filters()
 
             return self._build_query(search_input, start_time)
@@ -423,6 +447,10 @@ class ProcessRequest:
         if self.search_phrase_filter:
             conditions.append(self.search_phrase_filter)
 
+        # Add logical query if present
+        if hasattr(self, 'logical_query') and self.logical_query:
+            conditions.append(self.logical_query)
+
         # Add field conditions
         if self.bson_objs:
             conditions.extend(self.bson_objs)
@@ -439,7 +467,6 @@ class ProcessRequest:
         elif len(conditions) > 1:
             query = {"$and": conditions}
 
-        
         logger.info(f"Final MongoDB Query: {query}")
         logger.info(f"Query conditions count: {len(conditions)}")
         logger.info(f"Individual conditions: {conditions}")  
@@ -449,42 +476,109 @@ class ProcessRequest:
             "projection": self.projections,
             "sort": self.sort,
             "skip": self.page_number,
-            "limit": self.page_size if self.page_size > 0 else None,  # None means no limit
+            "limit": self.page_size if self.page_size > 0 else None,  # This is correct!
             "metrics": {"elapsed_time": time.time() - start_time}
         }
+
     
-    def _build_logical_query(self) -> Dict[str, Any]:
-        """Build logical operations query"""
-        if not self.bson_objs:
-            return None
-
-        query = None
-        current_index = 0
-
-        for op in self.logical_ops:
-            if current_index >= len(self.bson_objs):
-                break
-
-            if op == "and":
-                if query is None:
-                    query = {"$and": [self.bson_objs[current_index], self.bson_objs[current_index + 1]]}
-                    current_index += 2
+    def _group_fields_by_logical_op(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Group fields by their associated logical operators"""
+        field_groups = []
+        current_group = {"fields": {}, "logicalOp": "AND"}  # Default to AND
+        
+        # Define control parameters to exclude from field processing
+        control_params = {
+            "exclude", "include", "skip", "limit", "size", "page", 
+            "sort.desc", "sort.asc", "datefrom", "dateto", "searchphrase"
+        }
+        
+        # If no logicalOp is specified, treat all fields as a single AND group
+        if "logicalOp" not in params:
+            for key, value in params.items():
+                if key not in control_params and value:
+                    current_group["fields"][key] = value
+            
+            if current_group["fields"]:
+                field_groups.append(current_group)
+            
+            return field_groups
+        
+        # Handle explicit logicalOp parameters
+        param_order = list(params.keys())
+        
+        # Collect all fields first
+        fields_before_logical_op = {}
+        fields_after_logical_op = {}
+        logical_op_found = False
+        logical_operator = "AND"
+        
+        for key in param_order:
+            value = params[key]
+            
+            if key == "logicalOp":
+                logical_op_found = True
+                logical_operator = value.upper()
+            elif key not in control_params and value:
+                if not logical_op_found:
+                    fields_before_logical_op[key] = value
                 else:
-                    query = {"$and": [query, self.bson_objs[current_index]]}
-                    current_index += 1
-            elif op == "or":
-                if query is None:
-                    query = {"$or": [self.bson_objs[current_index], self.bson_objs[current_index + 1]]}
-                    current_index += 2
-                else:
-                    query = {"$and": [query, self.bson_objs[current_index]]}
-                    current_index += 1
-            elif op == "not":
-                if query is None:
-                    query = {"$not": self.bson_objs[current_index]}
-                    current_index += 1
-                else:
-                    query = {"$and": [query, {"$not": self.bson_objs[current_index]}]}
-                    current_index += 1
+                    fields_after_logical_op[key] = value
+        
+        # Create a single group with all fields and the specified logical operator
+        all_fields = {}
+        all_fields.update(fields_before_logical_op)
+        all_fields.update(fields_after_logical_op)
+        
+        if all_fields:
+            field_groups.append({
+                "fields": all_fields,
+                "logicalOp": logical_operator
+            })
+        
+        return field_groups
 
-        return query
+    
+    def _build_logical_query(self, field_groups: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Build MongoDB query with proper logical operations"""
+        if not field_groups:
+            return {}
+        
+        if len(field_groups) == 1:
+            # Single group - build based on its logical operator
+            group = field_groups[0]
+            conditions = []
+            
+            for field, value in group["fields"].items():
+                # Handle comma-separated values for OR within same field
+                if "," in str(value):
+                    field_conditions = []
+                    for val in str(value).split(","):
+                        val = val.strip()
+                        if val:
+                            # Use partial match for better search results
+                            field_conditions.append({field: {"$regex": f"{re.escape(val)}", "$options": "i"}})
+                    if field_conditions:
+                        conditions.append({"$or": field_conditions})
+                else:
+                    # Use partial match instead of exact match for better search results
+                    conditions.append({field: {"$regex": f"{re.escape(str(value))}", "$options": "i"}})
+            
+            if len(conditions) == 1:
+                return conditions[0]
+            elif group["logicalOp"] == "OR":
+                return {"$or": conditions}
+            else:
+                return {"$and": conditions}
+        
+        # Multiple groups - combine them
+        group_conditions = []
+        for group in field_groups:
+            group_query = self._build_logical_query([group])
+            if group_query:
+                group_conditions.append(group_query)
+        
+        if len(group_conditions) == 1:
+            return group_conditions[0]
+        else:
+            # Multiple groups are combined with AND by default
+            return {"$and": group_conditions}
