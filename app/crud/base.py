@@ -13,23 +13,9 @@ class BaseCRUD:
         self.collection = db[collection_name]
         self.request_processor = ProcessRequest()
 
-    def create(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new document"""
-        try:
-            result = self.collection.insert_one(data)
-            new_doc = self.collection.find_one({"_id": result.inserted_id})
-            new_doc["_id"] = str(new_doc["_id"])
-            return {
-                "ResultData": [new_doc],
-                "ResultCount": 1,
-                "Metrics": {"ElapsedTime": 0}
-            }
-        except Exception as e:
-            logger.error(f"Failed to create document: {e}")
-            raise InternalServerException(f"Failed to create document: {str(e)}")
-
     def get(self, doc_id: str) -> Dict[str, Any]:
         """Get a single document by ID"""
+        print(f"Getting document with ID: {doc_id}")
         start_time = time.time()
         try:
             doc = self.collection.find_one({"_id": ObjectId(doc_id)})
@@ -52,21 +38,26 @@ class BaseCRUD:
         """Get all documents with optional filtering"""
         start_time = time.time()
         try:
-            cursor = self.collection.find(filters).skip(skip).limit(limit)
+            cursor = self.collection.find(
+                filter=filters,
+                projection={"_id": 0}
+            ).skip(skip)
+            
+            # Only apply limit if it's greater than 0 (0 means return all)
+            if limit > 0:
+                cursor = cursor.limit(limit)
+            
             docs = list(cursor)
             
             if not docs:
                 raise KeyWordNotFoundException("No documents found matching the criteria")
-                
-            for doc in docs:
-                doc["_id"] = str(doc["_id"])
             
             count = self.collection.count_documents(filters)
             
             return {
                 "ResultData": docs,
                 "ResultCount": count,
-                "PageSize": limit,
+                "PageSize": limit if limit > 0 else 0,  # 0 indicates all results returned
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
         except KeyWordNotFoundException as e:
@@ -89,6 +80,10 @@ class BaseCRUD:
             # Process request parameters
             try:
                 processed = self.request_processor.process_search_params(kwargs)
+                # Ensure _id is excluded from projection
+                if "projection" not in processed:
+                    processed["projection"] = {}
+                processed["projection"]["_id"] = 0
             except Exception as e:
                 # If there's an error processing the search parameters, it's likely an illegal argument
                 logger.error(f"Error processing search parameters: {e}")
@@ -109,10 +104,12 @@ class BaseCRUD:
                     projection=processed["projection"]
                 )
 
-                if processed["skip"]:
+                # Only apply skip if it's greater than 0
+                if processed["skip"] and processed["skip"] > 0:
                     cursor = cursor.skip(processed["skip"])
                 
-                if processed["limit"]:
+                # Only apply limit if it's specified and greater than 0 (None or 0 means return all results)
+                if processed["limit"] is not None and processed["limit"] > 0:
                     cursor = cursor.limit(processed["limit"])
 
                 if processed["sort"]:
@@ -126,18 +123,31 @@ class BaseCRUD:
                 raise InternalServerException(f"Error executing MongoDB query: {str(e)}")
             
             if not docs:
-                raise KeyWordNotFoundException("No documents found matching the search criteria")
+                # raise KeyWordNotFoundException("No documents found matching the search criteria")
+                # MARK: @Mehdi: Instead of raising an exception, return an empty result set to match current
+                # implementation behavior
+                logger.warning("No documents found matching the search criteria")
+                return {
+                    "ResultData": [],
+                    "ResultCount": 0,
+                    "PageSize": processed["limit"] if processed["limit"] is not None else 0,
+                    "Metrics": {"ElapsedTime": time.time() - start_time}
+                }
                 
             for doc in docs:
                 if "_id" in doc:
                     doc["_id"] = str(doc["_id"])
 
+            # Get total count of matching documents
             count = self.collection.count_documents(processed["query"])
+            
+            # Determine PageSize based on whether pagination was used
+            page_size = processed["limit"] if processed["limit"] is not None and processed["limit"] > 0 else 0
             
             return {
                 "ResultData": docs,
                 "ResultCount": count,
-                "PageSize": processed["limit"],
+                "PageSize": page_size,  # 0 indicates all results returned
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
         except KeyWordNotFoundException as e:

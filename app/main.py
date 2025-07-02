@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
+from contextlib import asynccontextmanager
 from app.database import connect_db, create_collection_indexes
 from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, usagemetrics, version
 from app.config import settings
@@ -19,14 +20,22 @@ init()
 
 logger = logging.getLogger(__name__)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    startup_event()
+    yield
+    logger.info("NIST Resource Metadata Management API shutting down...")
+
 app = FastAPI(
     title="NIST Resource Metadata Management API",
     description="API for managing resource metadata",
     version="0.0.1",
     docs_url="/docs",
     root_path=settings.ROOT_PATH,
-
+    lifespan=lifespan
 )
+
 # Router for ``field`` needs to come before ``record`` to avoid field queries to get
 # caught in the `record` router
 app.include_router(field.router) 
@@ -139,7 +148,6 @@ async def mongodb_operation_failure_handler(request: Request, exc: OperationFail
         content=error_info.to_dict()
     )
 
-@app.on_event("startup")
 def startup_event():
     # Save config source for display in banner
     config_source = settings.show_config_source()
@@ -195,7 +203,6 @@ def startup_event():
     logger.info(f"Metrics DB: {settings.METRICS_DB_NAME}")
     logger.info("NIST Resource Metadata Management API started successfully!")
 
-
 @app.get("/debug/record-collection")
 async def debug_record_collection():
     """Debug endpoint to test record collection directly"""
@@ -225,6 +232,7 @@ async def debug_record_collection():
     
 @app.get("/", response_class=HTMLResponse)
 async def root():
+    """Root endpoint that returns HTML page"""
     try:
         # Construct the absolute path to the index.html file
         base_dir = os.path.dirname(os.path.abspath(__file__))

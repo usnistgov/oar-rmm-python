@@ -1,5 +1,5 @@
 from typing import Optional, Dict, Any
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
 import requests
 import json
@@ -15,6 +15,11 @@ dotenv_path = os.path.join(BASE_DIR, '.env')
 load_dotenv(dotenv_path=dotenv_path)
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding='utf-8'
+    )
+    
     CONFIG_SOURCE: str = "local"
     ROOT_PATH: str = os.getenv("ROOT_PATH", "/rmm")
     # Main database settings
@@ -56,9 +61,6 @@ class Settings(BaseSettings):
 
     # Local File Configuration
     LOCAL_CONFIG_FILE: Optional[str] = os.getenv("LOCAL_CONFIG_FILE")
-    class Config:
-        env_file = ".env"
-        env_file_encoding = 'utf-8'
         
     def show_config_source(self):
         """Print the source of the current configuration"""
