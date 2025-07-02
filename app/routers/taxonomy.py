@@ -30,19 +30,6 @@ async def search_taxonomy(request: Request, params: Dict[str, Any] = Depends(val
     """
     return taxonomy_crud.search(**params)
 
-# @router.post("/taxonomy/")
-# async def create_taxonomy(request: Request, data: Dict[str, Any] = Body(..., description="Taxonomy data to create")):
-#     """
-#     Create a new taxonomy entry.
-    
-#     Args:
-#         data (Dict[str, Any]): The taxonomy data to create
-        
-#     Returns:
-#         Dict: The newly created taxonomy entry with ID and metadata
-#     """
-#     return taxonomy_crud.create(data)
-
 @router.get("/taxonomy/{taxonomy_id}")
 async def get_taxonomy(request: Request, taxonomy_id: str):
     """

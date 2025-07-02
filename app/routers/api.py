@@ -30,19 +30,6 @@ async def search_apis(request: Request, params: Dict[str, Any] = Depends(validat
     """
     return api_crud.search(**params)
 
-# @router.post("/apis/")
-# async def create_api(data: Dict[str, Any]):
-#     """
-#     Create a new API entry.
-    
-#     Args:
-#         data (Dict[str, Any]): The API data to create
-        
-#     Returns:
-#         Dict: The newly created API with ID and metadata
-#     """
-#     return api_crud.create(data)
-
 @router.get("/apis/{api_id}")
 async def get_api(request: Request, api_id: str):
     """

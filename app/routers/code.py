@@ -28,15 +28,6 @@ async def search_code(request: Request, params: Dict[str, Any] = Depends(validat
     """
     return code_crud.search(**params)
 
-# @router.post("/code/")
-# async def create_code(
-#     request: Request, data: Dict[str, Any] = Body(..., description="Code data to create")
-# ):
-#     """
-#     Create a new code entry
-#     """
-#     return code_crud.create(data)
-
 @router.get("/code/{code_id}")
 async def get_code(request: Request, code_id: str):
     """
