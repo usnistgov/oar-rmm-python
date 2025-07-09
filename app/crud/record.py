@@ -44,8 +44,8 @@ class RecordCRUD(BaseCRUD):
             
             if query_result:
                 return {
-                    "ResultData": [query_result],
                     "ResultCount": 1,
+                    "ResultData": [query_result],
                     "Metrics": {"ElapsedTime": time.time() - start_time}
                 }
 
