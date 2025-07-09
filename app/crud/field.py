@@ -21,8 +21,8 @@ class FieldCRUD(BaseCRUD):
         Returns:
             dict: The newly created field with the following structure:
                 {
-                    "ResultData": [field_dict],
                     "ResultCount": 1,
+                    "ResultData": [field_dict],
                     "Metrics": {"ElapsedTime": float}
                 }
                 
