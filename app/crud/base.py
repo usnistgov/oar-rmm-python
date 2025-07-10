@@ -23,8 +23,8 @@ class BaseCRUD:
                 raise ResourceNotFoundException(f"Document with ID {doc_id} not found")
             doc["_id"] = str(doc["_id"])
             return {
-                "ResultData": [doc],
                 "ResultCount": 1,
+                "ResultData": [doc],
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
         except ResourceNotFoundException as e:
@@ -55,8 +55,8 @@ class BaseCRUD:
             count = self.collection.count_documents(filters)
             
             return {
-                "ResultData": docs,
                 "ResultCount": count,
+                "ResultData": docs,
                 "PageSize": limit if limit > 0 else 0,  # 0 indicates all results returned
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
@@ -128,8 +128,8 @@ class BaseCRUD:
                 # implementation behavior
                 logger.warning("No documents found matching the search criteria")
                 return {
-                    "ResultData": [],
                     "ResultCount": 0,
+                    "ResultData": [],
                     "PageSize": processed["limit"] if processed["limit"] is not None else 0,
                     "Metrics": {"ElapsedTime": time.time() - start_time}
                 }
@@ -145,8 +145,9 @@ class BaseCRUD:
             page_size = processed["limit"] if processed["limit"] is not None and processed["limit"] > 0 else 0
             
             return {
-                "ResultData": docs,
+
                 "ResultCount": count,
+                "ResultData": docs,
                 "PageSize": page_size,  # 0 indicates all results returned
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }

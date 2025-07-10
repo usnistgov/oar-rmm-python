@@ -112,8 +112,9 @@ async def search_papers(
                 raise KeyWordNotFoundException(str(request.url))
             
             return {
-                "ResultData": filtered_data,
+
                 "ResultCount": len(papers_data),
+                "ResultData": filtered_data,
                 "PageSize": limit,
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }

@@ -39,8 +39,9 @@ class PatentCRUD(BaseCRUD):
             result = self.search(**{"Patent #": patent_id})
             if result["ResultCount"] > 0:
                 return {
-                    "ResultData": result["ResultData"][0],
+
                     "ResultCount": 1,
+                    "ResultData": result["ResultData"][0],
                     "Metrics": result["Metrics"]
                 }
             raise ValueError("Patent not found")

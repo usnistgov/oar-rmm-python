@@ -29,11 +29,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="NIST Resource Metadata Management API",
-    description="API for managing resource metadata",
+    description="These are the set of REST API endpoints which are used to get metadata of various resources especially used to search and discove for Public data repository(PDR). ",
     version="0.0.1",
-    docs_url="/docs",
+    docs_url="/",
     root_path=settings.ROOT_PATH,
-    lifespan=lifespan
+    lifespan=lifespan,
+    contact={
+        "name": "Data Support @NIST",
+        "url": "https://data.nist.gov/sdp/#/help",
+        "email": "datasupport@nist.gov",
+    },
+    license_info={
+        "name": "NIST Software",
+        "url": "https://www.nist.gov/open/copyright-fair-use-and-licensing-statements-srd-data-software-and-technical-series-publications",
+    }
 )
 
 # Router for ``field`` needs to come before ``record`` to avoid field queries to get
