@@ -141,7 +141,7 @@ class ProcessRequest:
                     search_input = True
                     self.search_phrase_filter = {
                         "$text": {
-                            "$search": f'\\"{value}\\"' if value.startswith('"') and value.endswith('"') else value
+                            "$search": f'\\{value}\\' if value.startswith('"') and value.endswith('"') else value
                         }
                     }
                 elif key == "exclude":
