@@ -315,15 +315,9 @@ settings = Settings.load()
 # Show configuration source
 settings.show_config_source()
 
-# Log configuration details
-logger.info(f"Database Configuration:")
-logger.info(f"  MONGO_URI: {settings.MONGO_URI}")
-logger.info(f"  DB_NAME: {settings.DB_NAME}")
-
 # Log metrics database configuration if available
 if settings.MONGO_URI_METRICS:
     logger.info(f"Metrics Database Configuration:")
-    logger.info(f"  MONGO_URI_METRICS: {settings.MONGO_URI_METRICS}")
     logger.info(f"  METRICS_DB_NAME: {settings.METRICS_DB_NAME}")
 else:
     logger.info("Metrics database using same connection as main database")
