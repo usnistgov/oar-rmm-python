@@ -21,7 +21,6 @@ def wait_for_mongodb():
     delay_seconds = 2
     
     # Check main database first
-    logger.info(f"Waiting for main MongoDB to be ready at {settings.MONGO_URI}")
     logger.info(f"Using DB: {settings.DB_NAME}")
     
     if not test_connection(settings.MONGO_URI, settings.DB_NAME, max_attempts, delay_seconds):
@@ -30,7 +29,6 @@ def wait_for_mongodb():
     # Then check metrics database if configured separately
     metrics_uri = settings.MONGO_URI_METRICS or settings.MONGO_URI
     if metrics_uri != settings.MONGO_URI:
-        logger.info(f"Waiting for metrics MongoDB to be ready at {metrics_uri}")
         logger.info(f"Using metrics DB: {settings.METRICS_DB_NAME}")
         
         if not test_connection(metrics_uri, settings.METRICS_DB_NAME, max_attempts, delay_seconds):

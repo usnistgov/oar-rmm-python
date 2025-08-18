@@ -40,7 +40,6 @@ def connect_db():
     for attempt in range(retry_count):
         try:
             # Connect to MongoDB
-            logger.info(f"Connecting to MongoDB: {settings.MONGO_URI}")
             client = MongoClient(settings.MONGO_URI)
             db = client[settings.DB_NAME]
             
@@ -67,8 +66,7 @@ def connect_metrics_db():
             metrics_uri = settings.MONGO_URI_METRICS or settings.MONGO_URI
             metrics_db_name = settings.METRICS_DB_NAME
             
-            logger.info(f"Connecting to Metrics MongoDB: {metrics_uri}")
-            logger.info(f"Metrics database name: {metrics_db_name}")
+            logger.info(f"Connecting to Metrics MongoDB")
             
             # Use the same client if connecting to the same server
             if metrics_uri == settings.MONGO_URI and client:
