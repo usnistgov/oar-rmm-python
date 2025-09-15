@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     UNIQUE_USERS_COLLECTION: str = os.getenv("UNIQUE_USERS_COLLECTION", "uniqueUsers")
     REPO_METRICS_COLLECTION: str = os.getenv("REPO_METRICS_COLLECTION", "repoMetrics")
     VERSIONS_COLLECTION: str = os.getenv("VERSIONS_COLLECTION", "versions")
-    RELEASESETS_COLLECTION: str = os.getenv("RELEASESETS_COLLECTION", "releaseSets")
+    RELEASESETS_COLLECTION: str = os.getenv("RELEASESETS_COLLECTION", "releasesets")
     
     # Remote Configuration
     USE_REMOTE_CONFIG: bool = os.getenv("USE_REMOTE_CONFIG", "False").lower() == "true"
