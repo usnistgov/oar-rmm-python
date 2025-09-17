@@ -51,8 +51,8 @@ class MetricsCRUD:
                     "ediid": result.get("ediid"),
                     "first_time_logged": result.get("first_time_logged"),
                     "last_time_logged": result.get("last_time_logged"),
-                    "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
-                    "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
+                    "total_size_download": self._sanitize_float_for_json(result.get("total_size_download", 0)),
+                    "success_get": self._sanitize_float_for_json(result.get("success_get", 0)),
                     "number_users": self._sanitize_float_for_json(result.get("number_users", 0)), 
                     "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
                 }
@@ -63,20 +63,19 @@ class MetricsCRUD:
         """Get metrics for a list of records"""
         # Determine sort field
         if sort_by == "total_size_download":
-            sort_field_db = "total_download_size"
+            sort_field_db = "total_size_download"
         elif sort_by == "users":
-            sort_field_db = "unique_users"
+            sort_field_db = "number_users"
         else: # Default or other sort fields
-            sort_field_db = "download_count" 
+            sort_field_db = "number_users" 
 
         mongo_sort_order = DESCENDING if sort_order == -1 or str(sort_order).lower() == "desc" else ASCENDING
         
         # Ensure projection includes all necessary fields from DB
         projection = {
             "_id": 0, "pdrid": 1, "ediid": 1, 
-            "total_download_size": 1, 
-            "unique_users": 1,        
-            "download_count": 1,     
+            "total_size_download": 1, 
+            "number_users": 1,        
             "first_time_logged": 1, 
             "last_time_logged": 1,
             "record_download": 1     
@@ -95,8 +94,8 @@ class MetricsCRUD:
                 "ediid": result.get("ediid"),
                 "first_time_logged": result.get("first_time_logged"),
                 "last_time_logged": result.get("last_time_logged"),
-                "total_size_download": self._sanitize_float_for_json(result.get("total_download_size", 0)),
-                "success_get": self._sanitize_float_for_json(result.get("download_count", 0)),
+                "total_size_download": self._sanitize_float_for_json(result.get("total_size_download", 0)),
+                "success_get": self._sanitize_float_for_json(result.get("success_get", 0)),
                 "number_users": self._sanitize_float_for_json(result.get("number_users", 0)),
                 "record_download": self._sanitize_float_for_json(result.get("record_download", 0))
             })
@@ -124,7 +123,7 @@ class MetricsCRUD:
 
         # sanitize every numeric field before returning
         for doc in results:
-            doc["downloads"]     = sanitize(doc.get("downloads"))
+            doc["success_download"]     = sanitize(doc.get("success_download"))
             doc["unique_users"]  = sanitize(doc.get("unique_users"))
 
         return {
@@ -191,6 +190,7 @@ class MetricsCRUD:
                 "success_get": result.get("success_get", 0),
                 "failure_get": result.get("failure_get", 0),
                 "datacart_or_client": result.get("datacart_or_client", 0),
+                "number_users": result.get("number_users", 0),
                 "total_size_download": result.get("total_size_download", 0),
                 "first_time_logged": result.get("first_time_logged"),
                 "last_time_logged": result.get("last_time_logged")
@@ -212,7 +212,7 @@ class MetricsCRUD:
             {},
             {"_id": 0, "pdrid": 1, "ediid": 1, "filepath": 1, "downloadURL": 1, 
             "success_get": 1, "failure_get": 1, "datacart_or_client": 1,
-            "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
+            "number_users": 1, "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
         ).sort(sort_field, sort_order))
         
         # Format results with sanitization
@@ -234,6 +234,7 @@ class MetricsCRUD:
                 "failure_get": sanitize_number(result.get("failure_get")),
                 "datacart_or_client": sanitize_number(result.get("datacart_or_client")),
                 "total_size_download": sanitize_number(result.get("total_size_download")),
+                "number_users": sanitize_number(result.get("number_users")),
                 "first_time_logged": result.get("first_time_logged"),
                 "last_time_logged": result.get("last_time_logged")
             })
