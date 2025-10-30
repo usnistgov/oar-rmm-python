@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     
     CONFIG_SOURCE: str = "local"
     ROOT_PATH: str = os.getenv("ROOT_PATH", "/rmm")
+
+    # Gzip settings
+    GZIP_MINIMUM_SIZE: int = int(os.getenv("GZIP_MINIMUM_SIZE", "1024"))  # in bytes, default 1KB
+
     # Main database settings
     MONGO_URI: str = os.getenv("MONGO_URI", "mongodb://localhost:27017")
     DB_NAME: str = os.getenv("DB_NAME", "oar-rmm")

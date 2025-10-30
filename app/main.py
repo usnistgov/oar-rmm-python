@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 from app.database import connect_db, create_collection_indexes
 from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, usagemetrics, version
@@ -10,6 +12,7 @@ from app.middleware.exceptions import (
     RMMException, ResourceNotFoundException, KeyWordNotFoundException, 
     IllegalArgumentException, GeneralException, InternalServerException, ErrorInfo
 )
+
 from pymongo.errors import OperationFailure
 import os
 import logging
@@ -43,6 +46,12 @@ app = FastAPI(
         "name": "NIST Software",
         "url": "https://www.nist.gov/open/copyright-fair-use-and-licensing-statements-srd-data-software-and-technical-series-publications",
     }
+)
+
+
+app.add_middleware(
+    GZipMiddleware,
+    minimum_size=int(settings.GZIP_MINIMUM_SIZE)
 )
 
 # Router for ``field`` needs to come before ``record`` to avoid field queries to get
