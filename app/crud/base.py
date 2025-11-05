@@ -112,9 +112,18 @@ class BaseCRUD:
                 if processed["limit"] is not None and processed["limit"] > 0:
                     cursor = cursor.limit(processed["limit"])
 
-                if processed["sort"]:
+                if processed["sort"] and isinstance(processed["sort"], list) and len(processed["sort"]) > 0:
                     cursor = cursor.sort(processed["sort"])
-
+                    # Modify collation settings for better title sorting
+                    cursor = cursor.collation({
+                        "locale": "en",
+                        "strength": 3,  # 3 for case+symbol sensitivity
+                        "numericOrdering": True,  # Properly handle numeric parts
+                        "caseLevel": True,  # Ensure proper case handling
+                        "alternate": "shifted"  # Ignore punctuation/symbols in base comparison
+                    })
+                elif "sort_asc" in kwargs or "sort_desc" in kwargs:
+                    logger.warning(f"Sort requested but not properly processed. Processed sort: {processed['sort']}")
                 # Get results - convert cursor to list to materialize any errors
                 docs = list(cursor)
                 logger.info(f"Found {len(docs)} documents")
