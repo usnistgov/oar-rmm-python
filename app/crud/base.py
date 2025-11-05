@@ -113,8 +113,17 @@ class BaseCRUD:
                     cursor = cursor.limit(processed["limit"])
 
                 if processed["sort"] and isinstance(processed["sort"], list) and len(processed["sort"]) > 0:
-                    cursor = cursor.sort(processed["sort"])
-                    # Modify collation settings for better title sorting
+                    # For nullable fields like firstIssued/annotated, we need to handle nulls last
+                    sort_spec = []
+                    for field, direction in processed["sort"]:
+                        # Check if this is a nullable field that should sort nulls last
+                        if field in ["firstIssued", "annotated"]:
+                            # First sort by whether the field exists
+                            sort_spec.append((f"{field}", direction))
+                        else:
+                            sort_spec.append((field, direction))
+                            
+                    cursor = cursor.sort(sort_spec)
                     cursor = cursor.collation({
                         "locale": "en",
                         "strength": 3,  # 3 for case+symbol sensitivity
