@@ -112,9 +112,27 @@ class BaseCRUD:
                 if processed["limit"] is not None and processed["limit"] > 0:
                     cursor = cursor.limit(processed["limit"])
 
-                if processed["sort"]:
-                    cursor = cursor.sort(processed["sort"])
-
+                if processed["sort"] and isinstance(processed["sort"], list) and len(processed["sort"]) > 0:
+                    # For nullable fields like firstIssued/annotated, we need to handle nulls last
+                    sort_spec = []
+                    for field, direction in processed["sort"]:
+                        # Check if this is a nullable field that should sort nulls last
+                        if field in ["firstIssued", "annotated"]:
+                            # First sort by whether the field exists
+                            sort_spec.append((f"{field}", direction))
+                        else:
+                            sort_spec.append((field, direction))
+                            
+                    cursor = cursor.sort(sort_spec)
+                    cursor = cursor.collation({
+                        "locale": "en",
+                        "strength": 3,  # 3 for case+symbol sensitivity
+                        "numericOrdering": True,  # Properly handle numeric parts
+                        "caseLevel": True,  # Ensure proper case handling
+                        "alternate": "shifted"  # Ignore punctuation/symbols in base comparison
+                    })
+                elif "sort_asc" in kwargs or "sort_desc" in kwargs:
+                    logger.warning(f"Sort requested but not properly processed. Processed sort: {processed['sort']}")
                 # Get results - convert cursor to list to materialize any errors
                 docs = list(cursor)
                 logger.info(f"Found {len(docs)} documents")
