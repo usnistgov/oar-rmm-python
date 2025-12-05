@@ -47,22 +47,28 @@ class MetricsBaseCRUD:
         query_data = request.process_search_params(params_copy)
         
         # Get count of total matching documents
-        count = collection.count_documents(query_data["query"])
+        query_filter = query_data.get("query") or {}
+        projection = query_data.get("projection")
+        skip_value = query_data.get("skip") or 0
+        limit_value = query_data.get("limit")
+
+        if not isinstance(limit_value, int) or limit_value < 0:
+            limit_value = 0
+
+        count = collection.count_documents(query_filter)
         
         # Fix sort parameter - handle None or empty sort
         sort_param = query_data.get("sort")
+        base_cursor = collection.find(query_filter, projection)
+
         if not sort_param or (isinstance(sort_param, list) and len(sort_param) == 0):
             # Default sort by last_time_logged if available
-            cursor = collection.find(
-                query_data["query"],
-                query_data["projection"]
-            ).sort([("last_time_logged", DESCENDING)]).skip(query_data["skip"]).limit(query_data["limit"])
+            cursor = base_cursor.sort([("last_time_logged", DESCENDING)])
         else:
             # Use provided sort
-            cursor = collection.find(
-                query_data["query"],
-                query_data["projection"]
-            ).sort(sort_param).skip(query_data["skip"]).limit(query_data["limit"])
+            cursor = base_cursor.sort(sort_param)
+
+        cursor = cursor.skip(skip_value).limit(limit_value)
         
         # Convert to list and handle ObjectIDs
         results = []
@@ -73,13 +79,9 @@ class MetricsBaseCRUD:
             
         result_doc = {
             f"{collection_name}Count": count,
-            "PageSize": query_data["limit"]
+            "PageSize": limit_value
         }
         
-        # For TotalUsers, only return the count
-        if collection_name.lower() == "totalusers":
-            return result_doc
-            
         # Add the metrics data
         result_doc[collection_name] = results
         result_doc["Metrics"] = {

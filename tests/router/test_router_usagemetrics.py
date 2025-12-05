@@ -64,11 +64,30 @@ class TestUsageMetricsRouter(unittest.TestCase):
         """Test get all files metrics with sorting"""
         mock_crud.get_file_metrics_list.return_value = {
             "FilesMetricsCount": 5,
+            "PageSize": 3,
             "FilesMetrics": []
         }
         
-        response = self.client.get("/usagemetrics/files?sort_by=downloads&sort_order=desc")
+        response = self.client.get("/usagemetrics/files?page=2&size=3&sort.desc=success_get")
         self.assertEqual(response.status_code, 200)
+        params = mock_crud.get_file_metrics_list.call_args[0][0]
+        self.assertEqual(params["page"], "2")
+        self.assertEqual(params["size"], "3")
+        self.assertEqual(params["sort.desc"], "success_get")
+
+    @patch('app.routers.usagemetrics.metrics_crud')
+    def test_get_files_metrics_legacy_sort_params(self, mock_crud):
+        """Ensure legacy sort_by/sort_order still works."""
+        mock_crud.get_file_metrics_list.return_value = {
+            "FilesMetricsCount": 0,
+            "PageSize": 10,
+            "FilesMetrics": []
+        }
+
+        response = self.client.get("/usagemetrics/files?sort_by=filepath&sort_order=asc")
+        self.assertEqual(response.status_code, 200)
+        params = mock_crud.get_file_metrics_list.call_args[0][0]
+        self.assertEqual(params["sort.asc"], "filepath")
 
     @patch('app.routers.usagemetrics.metrics_crud')
     def test_get_repo_metrics(self, mock_crud):
@@ -85,11 +104,39 @@ class TestUsageMetricsRouter(unittest.TestCase):
     def test_get_unique_users(self, mock_crud):
         """Test get unique users count"""
         mock_crud.get_total_unique_users.return_value = {
-            "total_unique_users": 500
+            "TotalUsersCount": 1,
+            "PageSize": 5,
+            "TotalUsers": [{"month": "2024-01", "count": 500}],
+            "Metrics": {"ElapsedTime": 0.01}
         }
         
-        response = self.client.get("/usagemetrics/totalusers")
+        response = self.client.get("/usagemetrics/totalusers?page=2&size=5&country=US")
         self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["TotalUsersCount"], 1)
+        mock_crud.get_total_unique_users.assert_called_once()
+        params = mock_crud.get_total_unique_users.call_args[0][0]
+        self.assertEqual(params["page"], "2")
+        self.assertEqual(params["size"], "5")
+        self.assertEqual(params["country"], "US")
+
+    @patch('app.routers.usagemetrics.metrics_crud')
+    def test_total_users_merges_duplicate_query_params(self, mock_crud):
+        """Ensure duplicate query params collapse into comma-separated values."""
+        mock_crud.get_total_unique_users.return_value = {
+            "TotalUsersCount": 0,
+            "PageSize": 10,
+            "TotalUsers": [],
+            "Metrics": {"ElapsedTime": 0.0}
+        }
+
+        response = self.client.get(
+            "/usagemetrics/totalusers?country=US&country=CA&sort.desc=timestamp"
+        )
+        self.assertEqual(response.status_code, 200)
+        params = mock_crud.get_total_unique_users.call_args[0][0]
+        self.assertEqual(params["country"], "US,CA")
+        self.assertEqual(params["sort.desc"], "timestamp")
 
     def test_sanitize_response(self):
         """Test response sanitization"""
@@ -115,9 +162,14 @@ class TestUsageMetricsRouter(unittest.TestCase):
     def test_endpoint_accessibility(self, mock_crud):
         """Test that all endpoints are accessible and don't return method not allowed"""
         mock_crud.get_record_metrics_list.return_value = {"DataSetMetricsCount": 0, "DataSetMetrics": []}
-        mock_crud.get_file_metrics_list.return_value = {"FilesMetricsCount": 0, "FilesMetrics": []}
+        mock_crud.get_file_metrics_list.return_value = {"FilesMetricsCount": 0, "PageSize": 0, "FilesMetrics": []}
         mock_crud.get_repo_metrics.return_value = {"RepoMetricsCount": 0, "RepoMetrics": []}
-        mock_crud.get_total_unique_users.return_value = {"total_unique_users": 0}
+        mock_crud.get_total_unique_users.return_value = {
+            "TotalUsersCount": 0,
+            "PageSize": 0,
+            "TotalUsers": [],
+            "Metrics": {"ElapsedTime": 0.0}
+        }
         
         endpoints = [
             "/usagemetrics/records",

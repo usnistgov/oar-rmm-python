@@ -1,5 +1,6 @@
 from datetime import datetime
 from app.database import db, metrics_db
+from app.crud.metrics_base import MetricsBaseCRUD
 from pymongo import ASCENDING, DESCENDING
 import logging
 import math
@@ -14,6 +15,7 @@ class MetricsCRUD:
         self.file_metrics = metrics_db.fileMetrics
         self.repo_metrics = metrics_db.repoMetrics
         self.unique_users = metrics_db.uniqueUsers
+        self.metrics_base = MetricsBaseCRUD()
 
     def _sanitize_float_for_json(self, value, default_if_non_finite=0):
         """Sanitizes float values that are not JSON compliant (NaN, inf, -inf)."""
@@ -202,50 +204,29 @@ class MetricsCRUD:
             "FilesMetrics": files_metrics
         }
     
-    def get_file_metrics_list(self, sort_by="total_size_download", sort_order=-1):
-        """Get metrics for all files with sorting"""
-        # Determine sort field
-        sort_field = "success_get" if sort_by == "total_size_download" else "filepath"
-        
-        # Get all results with sorting
-        results = list(self.file_metrics.find(
-            {},
-            {"_id": 0, "pdrid": 1, "ediid": 1, "filepath": 1, "downloadURL": 1, 
-            "success_get": 1, "failure_get": 1, "datacart_or_client": 1,
-            "number_users": 1, "total_size_download": 1, "first_time_logged": 1, "last_time_logged": 1}
-        ).sort(sort_field, sort_order))
-        
-        # Format results with sanitization
-        files_metrics = []
-        for result in results:
-            # Sanitize numeric values
-            def sanitize_number(value, default=0):
-                if isinstance(value, (int, float)):
-                    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
-                        return default
-                return value or default
-                
-            files_metrics.append({
-                "pdrid": result.get("pdrid"),
-                "ediid": result.get("ediid"),
-                "filepath": result.get("filepath"),
-                "downloadURL": result.get("downloadURL"),
-                "success_get": sanitize_number(result.get("success_get")),
-                "failure_get": sanitize_number(result.get("failure_get")),
-                "datacart_or_client": sanitize_number(result.get("datacart_or_client")),
-                "total_size_download": sanitize_number(result.get("total_size_download")),
-                "number_users": sanitize_number(result.get("number_users")),
-                "first_time_logged": result.get("first_time_logged"),
-                "last_time_logged": result.get("last_time_logged")
-            })
-        
-        total = len(files_metrics)
-        
-        return {
-            "FilesMetricsCount": total,
-            "PageSize": 0,
-            "FilesMetrics": files_metrics
-        }
+    def get_file_metrics_list(self, params=None):
+        """Get metrics for all files with ProcessRequest paging/sorting support."""
+        params = params or {}
+        params = params.copy()
+
+        # Provide legacy defaults if no explicit sort provided
+        if "sort.desc" not in params and "sort.asc" not in params:
+            params["sort.desc"] = "success_get"
+
+        return self.metrics_base.process_metrics_query(
+            self.file_metrics,
+            params,
+            "FilesMetrics"
+        )
+
+    def get_total_unique_users(self, params=None):
+        """Return paginated total unique user metrics leveraging ProcessRequest compatible params."""
+        params = params or {}
+        return self.metrics_base.process_metrics_query(
+            self.unique_users,
+            params,
+            "TotalUsers"
+        )
 
 metrics_crud = MetricsCRUD()
 

@@ -103,31 +103,45 @@ class TestMetricsCRUDComprehensive(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["FilesMetricsCount"], 2)
 
-    @patch('app.crud.metrics.metrics_crud.file_metrics')
-    def test_get_file_metrics_list_success(self, mock_collection):
-        """Test get file metrics list with sorting"""
-        mock_collection.find.return_value.sort.return_value = [
-            {
-                "filepath": "file1.txt",
-                "success_get": 100,
-                "total_size_download": 1000
-            }
-        ]
-        
-        result = metrics_crud.get_file_metrics_list(sort_by="total_size_download")
-        
-        self.assertIn("FilesMetricsCount", result)
-        self.assertIn("FilesMetrics", result)
+    @patch('app.crud.metrics.metrics_crud.metrics_base')
+    def test_get_file_metrics_list_uses_metrics_base(self, mock_base):
+        """Ensure file metrics list leverages MetricsBaseCRUD with defaults."""
+        mock_base.process_metrics_query.return_value = {
+            "FilesMetricsCount": 0,
+            "PageSize": 10,
+            "FilesMetrics": [],
+            "Metrics": {"ElapsedTime": 0.0}
+        }
 
-    @patch('app.crud.metrics.metrics_crud.unique_users')
-    def test_get_total_unique_users_method_exists(self, mock_collection):
-        """Test that we can call a method that gets total unique users"""
-        mock_collection.count_documents.return_value = 500
-        
-        # Since get_total_unique_users doesn't exist, let's test the collection directly
-        count = mock_collection.count_documents({})
-        
-        self.assertEqual(count, 500)
+        params = {"page": "2", "size": "5"}
+        result = metrics_crud.get_file_metrics_list(params)
+
+        self.assertEqual(result["PageSize"], 10)
+        mock_base.process_metrics_query.assert_called_once_with(
+            metrics_crud.file_metrics,
+            {"page": "2", "size": "5", "sort.desc": "success_get"},
+            "FilesMetrics"
+        )
+
+    @patch('app.crud.metrics.metrics_crud.metrics_base')
+    def test_get_total_unique_users_uses_metrics_base(self, mock_base):
+        """Ensure total users delegates to MetricsBaseCRUD with params."""
+        mock_base.process_metrics_query.return_value = {
+            "TotalUsersCount": 0,
+            "PageSize": 10,
+            "TotalUsers": [],
+            "Metrics": {"ElapsedTime": 0.0}
+        }
+
+        params = {"page": "1"}
+        result = metrics_crud.get_total_unique_users(params)
+
+        self.assertEqual(result["PageSize"], 10)
+        mock_base.process_metrics_query.assert_called_once_with(
+            metrics_crud.unique_users,
+            params,
+            "TotalUsers"
+        )
 
 if __name__ == '__main__':
     unittest.main()
