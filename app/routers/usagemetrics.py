@@ -143,4 +143,4 @@ async def get_unique_users(
         params.pop("sort.desc", None)
 
     metrics = metrics_crud.get_total_unique_users(params)
-    return JSONResponse(content=sanitize_response(metrics))
+    return JSONResponse(content=sanitize_response({"TotalUsersCount": metrics.get("TotalUsersCount", 0)}))
