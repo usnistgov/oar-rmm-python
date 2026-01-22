@@ -1,44 +1,44 @@
-from fastapi import APIRouter, Query, Body, Request
-from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, Depends, Request
+from typing import Dict, Any
 from app.crud.patent import patent_crud
+from app.middleware.dependencies import validate_search_params
 
 router = APIRouter()
 
 @router.get("/patents/")
 @router.get("/patents")
-async def search_patents(
-    reqest: Request,
-    searchphrase: Optional[str] = Query(None, description="Text to search for"),
-    skip: int = Query(0, description="Number of patents to skip"),
-    limit: int = Query(10, description="Maximum number of patents to return"),
-    sort_asc: Optional[List[str]] = Query(None, description="Fields to sort ascending"),
-    sort_desc: Optional[List[str]] = Query(None, description="Fields to sort descending"),
-    include: Optional[List[str]] = Query(None, description="Fields to include"),
-    exclude: Optional[List[str]] = Query(None, description="Fields to exclude"),
-    laboratory: Optional[str] = Query(None, description="Filter by laboratory"),
-    status: Optional[str] = Query(None, description="Filter by status"),
-    file_date: Optional[str] = Query(None, description="Filter by file date (YYYY-MM-DD)")
-):
-    """Search patents with various filters"""
-    search_params = {
-        "searchphrase": searchphrase,
-        "skip": skip,
-        "limit": limit,
-        "sort_asc": sort_asc,
-        "sort_desc": sort_desc,
-        "include": include,
-        "exclude": exclude
-    }
-    
-    # Add optional filters
-    if laboratory:
-        search_params["Laboratory 1"] = laboratory
-    if status:
-        search_params["Status"] = status
-    if file_date:
-        search_params["File Date"] = file_date
-        
-    return patent_crud.search(**search_params)
+async def search_patents(request: Request, params: Dict[str, Any] = Depends(validate_search_params)):
+    """
+    Search patents in the database.
+
+    Args:
+        params (Dict[str, Any]): Search parameters including:
+            - searchphrase (str, optional): Text to search for
+            - skip (int, optional): Number of records to skip
+            - limit (int, optional): Maximum records to return
+            - sort.desc/sort.asc (str, optional): Fields to sort by
+
+    Returns:
+        Dict: {
+            "ResultData": List of matched records,
+            "ResultCount": Total number of matches,
+            "PageSize": Number of records per page,
+            "Metrics": Query execution metrics
+        }
+    """
+    # Backward-compatible parameter mapping
+    if "sort_asc" in params:
+        params["sort.asc"] = params.pop("sort_asc")
+    if "sort_desc" in params:
+        params["sort.desc"] = params.pop("sort_desc")
+    if "laboratory" in params:
+        params["Laboratory 1"] = params.pop("laboratory")
+    if "status" in params:
+        params["Status"] = params.pop("status")
+    if "file_date" in params:
+        params["File Date"] = params.pop("file_date")
+
+    return patent_crud.search(**params)
 
 @router.get("/patents/{patent_id}")
 async def get_patent(patent_id: str):
