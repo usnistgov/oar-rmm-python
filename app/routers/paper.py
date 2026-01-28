@@ -1,12 +1,13 @@
 from pathlib import Path
 import certifi
 import requests
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Depends, Request
 from typing import Optional, List, Dict, Any
 import logging
 import time
 import re
 from app.middleware.exceptions import KeyWordNotFoundException, InternalServerException, IllegalArgumentException
+from app.middleware.dependencies import validate_search_params
 
 logger = logging.getLogger(__name__)
 
@@ -136,25 +137,18 @@ def map_paper_to_nerdm(paper: Dict[str, Any]) -> Dict[str, Any]:
 
 @router.get("/papers/")
 @router.get("/papers")
-async def search_papers(
-    request: Request,
-    searchphrase: Optional[str] = Query(None, description="Text to search for"),
-    from_date: Optional[str] = Query("2010-01-01", description="Search from date (YYYY-MM-DD)"),
-    skip: int = Query(0, description="Number of papers to skip"),
-    limit: int = Query(10, description="Maximum number of papers to return"),
-    include: Optional[List[str]] = Query(None, description="Fields to include"),
-    exclude: Optional[List[str]] = Query(None, description="Fields to exclude")
-):
+async def search_papers(request: Request, params: Dict[str, Any] = Depends(validate_search_params)):
     """
     Search papers from the NIST Papers API.
     
     Args:
-        searchphrase (str, optional): Text to search for in papers
-        from_date (str, optional): Start date for search (YYYY-MM-DD)
-        skip (int): Number of results to skip (pagination)
-        limit (int): Maximum number of results to return
-        include (List[str], optional): Fields to include in results
-        exclude (List[str], optional): Fields to exclude from results
+        params (Dict[str, Any]): Search parameters including:
+            - searchphrase (str, optional): Text to search for in papers
+            - from_date (str, optional): Start date for search (YYYY-MM-DD)
+            - skip (int, optional): Number of results to skip
+            - limit (int, optional): Maximum number of results to return
+            - include (List[str], optional): Fields to include in results
+            - exclude (List[str], optional): Fields to exclude from results
         
     Returns:
         Dict: {
@@ -172,12 +166,36 @@ async def search_papers(
     start_time = time.time()
     
     try:
+        searchphrase = params.get("searchphrase")
+        from_date = params.get("from_date") or params.get("fromDate") or "2010-01-01"
+        include = params.get("include")
+        exclude = params.get("exclude")
+
+        skip_value = params.get("skip")
+        limit_value = params.get("limit") or params.get("size")
+        page_value = params.get("page")
+
+        skip = int(skip_value) if skip_value is not None else 0
+        limit = int(limit_value) if limit_value is not None else None
+        page = int(page_value) if page_value is not None else None
+
         # Validate parameters
         if include and exclude:
             raise IllegalArgumentException("Cannot use both include and exclude parameters")
-        
-        if skip < 0 or limit <= 0:
-            raise IllegalArgumentException("Skip must be non-negative and limit must be positive")
+
+        if skip < 0:
+            raise IllegalArgumentException("Skip must be non-negative")
+
+        if page is not None and page < 1:
+            raise IllegalArgumentException("Page must be at least 1")
+
+        if limit is not None and limit <= 0:
+            raise IllegalArgumentException("Limit must be positive when provided")
+
+        if page is not None and skip_value is None:
+            if limit is None:
+                limit = 10
+            skip = (page - 1) * limit
         
         # Check if certificate exists
         if not CERT_PATH.exists():
@@ -212,19 +230,22 @@ async def search_papers(
             # Map to NERDm-like records, then filter fields and apply pagination
             mapped_data = [map_paper_to_nerdm(paper) for paper in papers_data]
             filtered_data = [
-                filter_fields(paper, include, exclude) 
+                filter_fields(paper, include, exclude)
                 for paper in mapped_data
-            ][skip:skip + limit] if mapped_data else []
+            ] if mapped_data else []
+
+            if skip or limit is not None:
+                end = (skip + limit) if limit is not None else None
+                filtered_data = filtered_data[skip:end]
             
             # If pagination results in empty results
             if not filtered_data:
                 raise KeyWordNotFoundException(str(request.url))
             
             return {
-
                 "ResultCount": len(papers_data),
                 "ResultData": filtered_data,
-                "PageSize": limit,
+                "PageSize": limit if limit is not None else 0,
                 "Metrics": {"ElapsedTime": time.time() - start_time}
             }
         else:
