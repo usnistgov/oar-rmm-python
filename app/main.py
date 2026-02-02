@@ -1,9 +1,12 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.openapi.docs import get_swagger_ui_html
 from contextlib import asynccontextmanager
+from pathlib import Path
 from app.database import connect_db, create_collection_indexes
 from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, usagemetrics, version
 from app.config import settings
@@ -15,6 +18,7 @@ from app.middleware.exceptions import (
 
 from pymongo.errors import OperationFailure
 import os
+import base64
 import logging
 import time
 from colorama import init, Fore, Style
@@ -22,6 +26,10 @@ from colorama import init, Fore, Style
 init()
 
 logger = logging.getLogger(__name__)
+
+FAVICON_PNG_BASE64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,7 +42,7 @@ app = FastAPI(
     title="NIST Resource Metadata Management API",
     description="These are the set of REST API endpoints which are used to get metadata of various resources especially used to search and discove for Public data repository(PDR). ",
     version="0.0.1",
-    docs_url="/",
+    docs_url=None,
     root_path=settings.ROOT_PATH,
     lifespan=lifespan,
     contact={
@@ -48,13 +56,8 @@ app = FastAPI(
     }
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Testing only: relax CORS in dev/start.sh runs.
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.add_middleware(
     GZipMiddleware,
@@ -255,29 +258,20 @@ async def debug_record_collection():
     except Exception as e:
         return {"error": str(e)}
     
-@app.get("/", response_class=HTMLResponse)
-async def root():
-    """Root endpoint that returns HTML page"""
-    try:
-        # Construct the absolute path to the index.html file
-        base_dir = os.path.dirname(os.path.abspath(__file__))
-        html_path = os.path.join(base_dir, "index.html")
-        
-        # Read the HTML file with proper error handling
-        try:
-            with open(html_path, "r") as file:
-                html_content = file.read()
-        except FileNotFoundError:
-            logger.error(f"Index.html file not found at path: {html_path}")
-            raise ResourceNotFoundException(f"Homepage template not found")
-        except Exception as e:
-            logger.error(f"Error reading index.html: {e}")
-            raise InternalServerException(f"Error reading homepage template: {str(e)}")
-        
-        return HTMLResponse(content=html_content)
-    except (ResourceNotFoundException, InternalServerException):
-        # Let the exception handlers handle these
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error serving homepage: {e}")
-        raise InternalServerException(f"Unexpected error serving homepage: {str(e)}")
+@app.get("/", include_in_schema=False)
+async def custom_swagger_ui_html(request: Request):
+    root_path = request.scope.get("root_path", "") or ""
+    return get_swagger_ui_html(
+        openapi_url=f"{root_path}{app.openapi_url}",
+        title=app.title + " - Docs",
+        swagger_js_url=f"{root_path}/static/swagger-ui-bundle.js",
+        swagger_css_url=f"{root_path}/static/swagger-ui.css",
+        swagger_favicon_url=f"{root_path}/static/favicon.png",
+    )
+
+@app.get("/favicon.png", include_in_schema=False)
+async def favicon_png():
+    return Response(
+        content=base64.b64decode(FAVICON_PNG_BASE64),
+        media_type="image/png"
+    )
