@@ -141,13 +141,10 @@ echo '#########################'
 
 # build the components
 installdir=$BUILD_DIR/oar-rmm-python/app
-staticdir=$BUILD_DIR/oar-rmm-python/static
 set -x
-mkdir -p $installdir $staticdir
+mkdir -p $installdir 
 
 cp -r $PACKAGE_DIR/app/* $installdir
-cp -r $PACKAGE_DIR/static/* $staticdir
-
 # ENTER COMMANDS for creating the dependency file(s)
 #
 # A dependency file should be called DISTNAME-${version}_dep.json
