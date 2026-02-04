@@ -56,11 +56,15 @@ app = FastAPI(
     }
 )
 
+ROOT_PREFIX = settings.ROOT_PATH.rstrip("/") if settings.ROOT_PATH and settings.ROOT_PATH != "/" else ""
+
 STATIC_DIR = Path("/app/oar-rmm-python/static")
 if not STATIC_DIR.exists():
     STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if ROOT_PREFIX:
+    app.mount(f"{ROOT_PREFIX}/static", StaticFiles(directory=str(STATIC_DIR)), name="static-root")
 
 app.add_middleware(
     GZipMiddleware,
@@ -269,8 +273,18 @@ async def custom_swagger_ui_html(request: Request):
         title=app.title + " - Docs",
         swagger_js_url=f"{root_path}/static/swagger-ui-bundle.js",
         swagger_css_url=f"{root_path}/static/swagger-ui.css",
-        swagger_favicon_url=f"{root_path}/static/favicon.png",
+        swagger_favicon_url=f"{root_path}/favicon.png",
     )
+
+if ROOT_PREFIX:
+    app.add_api_route(f"{ROOT_PREFIX}/", custom_swagger_ui_html, include_in_schema=False)
+
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi_schema():
+    return JSONResponse(app.openapi())
+
+if ROOT_PREFIX:
+    app.add_api_route(f"{ROOT_PREFIX}/openapi.json", openapi_schema, include_in_schema=False)
 
 @app.get("/favicon.png", include_in_schema=False)
 async def favicon_png():
@@ -278,3 +292,6 @@ async def favicon_png():
         content=base64.b64decode(FAVICON_PNG_BASE64),
         media_type="image/png"
     )
+
+if ROOT_PREFIX:
+    app.add_api_route(f"{ROOT_PREFIX}/favicon.png", favicon_png, include_in_schema=False)
