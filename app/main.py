@@ -56,8 +56,21 @@ app = FastAPI(
     }
 )
 
+ROOT_PREFIX = settings.ROOT_PATH.rstrip("/") if settings.ROOT_PATH and settings.ROOT_PATH != "/" else ""
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-app.mount(f"{settings.ROOT_PATH}/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+if ROOT_PREFIX:
+    @app.middleware("http")
+    async def strip_root_prefix(request: Request, call_next):
+        path = request.scope.get("path", "")
+        if path == ROOT_PREFIX:
+            request.scope["path"] = "/"
+        elif path.startswith(f"{ROOT_PREFIX}/"):
+            request.scope["path"] = path[len(ROOT_PREFIX):] or "/"
+        request.scope["root_path"] = ROOT_PREFIX
+        return await call_next(request)
 
 app.add_middleware(
     GZipMiddleware,
@@ -260,13 +273,12 @@ async def debug_record_collection():
     
 @app.get("/", include_in_schema=False)
 async def custom_swagger_ui_html(request: Request):
-    root_path = request.scope.get("root_path", "") or ""
     return get_swagger_ui_html(
-        openapi_url=f"{root_path}{app.openapi_url}",
+        openapi_url="openapi.json",
         title=app.title + " - Docs",
-        swagger_js_url=f"{root_path}/static/swagger-ui-bundle.js",
-        swagger_css_url=f"{root_path}/static/swagger-ui.css",
-        swagger_favicon_url=f"{root_path}/favicon.png",
+        swagger_js_url="static/swagger-ui-bundle.js",
+        swagger_css_url="static/swagger-ui.css",
+        swagger_favicon_url="favicon.png",
     )
 
 
