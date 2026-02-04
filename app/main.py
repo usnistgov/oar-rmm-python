@@ -57,7 +57,7 @@ app = FastAPI(
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.mount(f"{settings.ROOT_PATH}/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 app.add_middleware(
     GZipMiddleware,
