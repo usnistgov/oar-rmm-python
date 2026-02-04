@@ -273,12 +273,13 @@ async def debug_record_collection():
     
 @app.get("/", include_in_schema=False)
 async def custom_swagger_ui_html(request: Request):
+    root_path = request.scope.get("root_path", "") or ""
     return get_swagger_ui_html(
-        openapi_url="openapi.json",
+        openapi_url=f"{root_path}{app.openapi_url}",
         title=app.title + " - Docs",
-        swagger_js_url="static/swagger-ui-bundle.js",
-        swagger_css_url="static/swagger-ui.css",
-        swagger_favicon_url="favicon.png",
+        swagger_js_url=f"{root_path}/static/swagger-ui-bundle.js",
+        swagger_css_url=f"{root_path}/static/swagger-ui.css",
+        swagger_favicon_url=f"{root_path}/favicon.png",
     )
 
 
