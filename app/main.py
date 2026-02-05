@@ -56,7 +56,7 @@ app = FastAPI(
     }
 )
 
-app.mount("/static", StaticFiles(directory="./app/static"), name="static")
+app.mount("/rmm/static", StaticFiles(directory="./app/static"), name="static")
 
 app.add_middleware(
     GZipMiddleware,
