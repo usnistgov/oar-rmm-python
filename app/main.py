@@ -1,10 +1,12 @@
+
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from pathlib import Path
 from app.database import connect_db, create_collection_indexes
@@ -43,7 +45,6 @@ app = FastAPI(
     description="These are the set of REST API endpoints which are used to get metadata of various resources especially used to search and discove for Public data repository(PDR). ",
     version="0.0.1",
     docs_url=None,
-    root_path=settings.ROOT_PATH,
     lifespan=lifespan,
     contact={
         "name": "Data Support @NIST",
@@ -56,8 +57,54 @@ app = FastAPI(
     }
 )
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+ROOT_PREFIX = "/rmm"
+
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    name="static"
+)
+app.mount(
+    f"{ROOT_PREFIX}/static",
+    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    name="static-root"
+)
+@app.get("/", include_in_schema=False)
+async def custom_swagger_ui_html(request: Request):
+    return get_swagger_ui_html(
+        openapi_url=f"{ROOT_PREFIX}/openapi.json",
+        title=app.title + " - Docs",
+        swagger_js_url="static/swagger-ui-bundle.js",
+        swagger_css_url="static/swagger-ui.css",
+        swagger_favicon_url="static/favicon.png",
+    )
+
+@app.get("/rmm/", include_in_schema=False)
+async def custom_swagger_ui_html_rmm(request: Request):
+    return custom_swagger_ui_html(request)
+
+@app.get("/openapi.json", include_in_schema=False)
+async def openapi_schema():
+    return JSONResponse(app.openapi())
+
+@app.get("/rmm/openapi.json", include_in_schema=False)
+async def openapi_schema_rmm():
+    return JSONResponse(app.openapi())
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    schema["servers"] = [{"url": ROOT_PREFIX}]
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 app.add_middleware(
     GZipMiddleware,
@@ -258,20 +305,8 @@ async def debug_record_collection():
     except Exception as e:
         return {"error": str(e)}
     
-@app.get("/", include_in_schema=False)
-async def custom_swagger_ui_html(request: Request):
-    root_path = request.scope.get("root_path", "") or ""
-    return get_swagger_ui_html(
-        openapi_url=f"{root_path}{app.openapi_url}",
-        title=app.title + " - Docs",
-        swagger_js_url=f"{root_path}/static/swagger-ui-bundle.js",
-        swagger_css_url=f"{root_path}/static/swagger-ui.css",
-        swagger_favicon_url=f"{root_path}/static/favicon.png",
-    )
-
-@app.get("/favicon.png", include_in_schema=False)
-async def favicon_png():
-    return Response(
-        content=base64.b64decode(FAVICON_PNG_BASE64),
-        media_type="image/png"
-    )
+@app.get('/favicon.ico')
+async def favicon():
+    file_name = "favicon.ico"
+    file_path = os.path.join(app.root_path, "static", file_name)
+    return FileResponse(path=file_path, headers={"Content-Disposition": "attachment; filename=" + file_name})
