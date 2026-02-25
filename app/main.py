@@ -111,6 +111,7 @@ app.add_middleware(
     minimum_size=int(settings.GZIP_MINIMUM_SIZE)
 )
 
+
 # Router for ``field`` needs to come before ``record`` to avoid field queries to get
 # caught in the `record` router
 app.include_router(field.router) 
@@ -123,6 +124,8 @@ app.include_router(releaseset.router)
 app.include_router(taxonomy.router)
 app.include_router(version.router)
 app.include_router(usagemetrics.router, tags=["Metrics"])
+
+
 
 # Metrics middleware to record API calls
 # app.add_middleware(MetricsMiddleware)

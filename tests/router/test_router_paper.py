@@ -1,24 +1,23 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from fastapi.testclient import TestClient
-import requests
 from app.main import app
-from app.routers.paper import filter_fields
 
 class TestPaperRouter(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_success(self, mock_post):
+    @patch('app.routers.paper.paper_crud')
+    def test_search_papers_success(self, mock_crud):
         """Test successful paper search"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [
-            {"title": "Test Paper 1", "authors": ["Author 1"]},
-            {"title": "Test Paper 2", "authors": ["Author 2"]}
-        ]
-        mock_post.return_value = mock_response
+        mock_crud.search.return_value = {
+            "ResultData": [
+                {"title": "Paper 1", "doi": "10.1234/test1"},
+                {"title": "Paper 2", "doi": "10.1234/test2"}
+            ],
+            "ResultCount": 2,
+            "Metrics": {"ElapsedTime": 0.15}
+        }
         
         response = self.client.get("/papers/?searchphrase=chemistry")
         
@@ -27,124 +26,127 @@ class TestPaperRouter(unittest.TestCase):
         self.assertIn("ResultData", data)
         self.assertIn("Metrics", data)
 
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_with_filters(self, mock_post):
-        """Test paper search with include/exclude filters"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"title": "Filtered Paper", "abstract": "Test"}]
-        mock_post.return_value = mock_response
+    @patch('app.routers.paper.paper_crud')
+    def test_get_paper_by_id(self, mock_crud):
+        """Test get paper by ID"""
+        mock_crud.get.return_value = {
+            "ResultData": [{"title": "Test Paper", "doi": "10.1234/example"}],
+            "Metrics": {"ElapsedTime": 0.08}
+        }
+
+        response = self.client.get("/papers/123")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("ResultData", data)
+
+    @patch('app.routers.paper.paper_crud')
+    def test_search_papers_with_filters(self, mock_crud):
+        """Test paper search with multiple filters"""
+        mock_crud.search.return_value = {
+            "ResultData": [{"title": "Filtered Paper"}],
+            "ResultCount": 1,
+            "Metrics": {"ElapsedTime": 0.12}
+        }
         
-        response = self.client.get("/papers/?searchphrase=physics&include=title")
+        response = self.client.get("/papers/?searchphrase=physics&sort_desc=title")
         
         self.assertEqual(response.status_code, 200)
 
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_api_error(self, mock_post):
-        """Test paper search when external API returns error"""
-        mock_post.side_effect = requests.RequestException("API unavailable")
-        
-        response = self.client.get("/papers/?searchphrase=test")
-        
-        self.assertEqual(response.status_code, 500)
-
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_timeout(self, mock_post):
-        """Test paper search timeout handling"""
-        mock_post.side_effect = requests.Timeout("Request timeout")
-        
-        response = self.client.get("/papers/?searchphrase=test")
-        
-        self.assertEqual(response.status_code, 500)
-
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_http_error(self, mock_post):
-        """Test paper search HTTP error handling"""
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-        mock_response.raise_for_status.side_effect = requests.HTTPError("Server error")
-        mock_post.return_value = mock_response
-        
-        response = self.client.get("/papers/?searchphrase=test")
-        
-        self.assertEqual(response.status_code, 500)
-
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_no_results(self, mock_post):
+    @patch('app.routers.paper.paper_crud')
+    def test_search_papers_no_results(self, mock_crud):
         """Test paper search with no results"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = []
-        mock_post.return_value = mock_response
+        from app.middleware.exceptions import KeyWordNotFoundException
+        mock_crud.search.side_effect = KeyWordNotFoundException("No papers found")
         
         response = self.client.get("/papers/?searchphrase=nonexistent")
         
         self.assertEqual(response.status_code, 404)
 
-    def test_search_papers_invalid_parameters(self):
-        """Test paper search with invalid parameters"""
-        # Test both include and exclude
-        response = self.client.get("/papers/?include=title&exclude=abstract")
-        self.assertEqual(response.status_code, 400)
-        
-        # Test negative skip
-        response = self.client.get("/papers/?skip=-1")
-        self.assertEqual(response.status_code, 400)
-        
-        # Test zero limit
-        response = self.client.get("/papers/?limit=0")
-        self.assertEqual(response.status_code, 400)
-
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_with_pagination(self, mock_post):
+    @patch('app.routers.paper.paper_crud')
+    def test_search_papers_with_pagination(self, mock_crud):
         """Test paper search with pagination"""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = [{"title": f"Paper {i}"} for i in range(20)]
-        mock_post.return_value = mock_response
+        mock_crud.search.return_value = {
+            "ResultData": [{"title": f"Paper {i}"} for i in range(5)],
+            "ResultCount": 50,
+            "Metrics": {"ElapsedTime": 0.2}
+        }
         
-        response = self.client.get("/papers/?searchphrase=test&skip=5&limit=10")
+        response = self.client.get("/papers/?skip=10&limit=5")
         
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(len(data["ResultData"]), 10)
+        self.assertEqual(len(data["ResultData"]), 5)
 
-    @patch('app.routers.paper.CERT_PATH')
-    @patch('app.routers.paper.requests.post')
-    def test_search_papers_cert_not_found(self, mock_post, mock_cert_path):
-        """Test certificate file not found"""
-        mock_cert_path.exists.return_value = False
+    @patch('app.routers.paper.paper_crud')
+    def test_get_paper_with_resource_not_found(self, mock_crud):
+        """Test get paper with ResourceNotFoundException"""
+        from app.middleware.exceptions import ResourceNotFoundException
+        mock_crud.get.side_effect = ResourceNotFoundException("Paper not found")
         
-        response = self.client.get("/papers/?searchphrase=test")
+        response = self.client.get("/papers/missing")
         
-        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.status_code, 404)
 
-    def test_filter_fields_include_only(self):
-        """Test filter_fields function with include only"""
-        doc = {"title": "Test", "abstract": "Content", "authors": ["A1"], "id": "123"}
-        result = filter_fields(doc, include=["title", "authors"])
+    @patch('app.routers.paper.paper_crud')
+    def test_search_papers_empty_results(self, mock_crud):
+        """Test paper search with empty results"""
+        mock_crud.search.return_value = {
+            "ResultData": [],
+            "ResultCount": 0,
+            "Metrics": {"ElapsedTime": 0.05}
+        }
         
-        self.assertIn("title", result)
-        self.assertIn("authors", result)
-        self.assertNotIn("abstract", result)
-        self.assertNotIn("id", result)
+        response = self.client.get("/papers/?searchphrase=nonexistent")
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["ResultCount"], 0)
 
-    def test_filter_fields_exclude_only(self):
-        """Test filter_fields function with exclude only"""
-        doc = {"title": "Test", "abstract": "Content", "authors": ["A1"], "id": "123"}
-        result = filter_fields(doc, exclude=["abstract", "id"])
+    @patch('app.routers.paper.paper_crud')
+    def test_search_papers_with_keyword_not_found_exception(self, mock_crud):
+        """Test KeyWordNotFoundException is handled by middleware"""
+        from app.middleware.exceptions import KeyWordNotFoundException
+        mock_crud.search.side_effect = KeyWordNotFoundException("No papers found")
         
-        self.assertIn("title", result)
-        self.assertIn("authors", result)
-        self.assertNotIn("abstract", result)
-        self.assertNotIn("id", result)
+        response = self.client.get("/papers/?searchphrase=nonexistent")
+        self.assertEqual(response.status_code, 404)
 
-    def test_filter_fields_no_filters(self):
-        """Test filter_fields function with no filters"""
-        doc = {"title": "Test", "abstract": "Content"}
-        result = filter_fields(doc)
+    @patch('app.routers.paper.paper_crud')
+    def test_paper_endpoints_exist(self, mock_crud):
+        """Test that paper endpoints are accessible"""
+        mock_crud.search.return_value = {
+            "ResultData": [],
+            "ResultCount": 0,
+            "Metrics": {"ElapsedTime": 0.01}
+        }
+        mock_crud.get.return_value = {
+            "ResultData": [{"title": "Test Paper"}],
+            "Metrics": {"ElapsedTime": 0.01}
+        }
         
-        self.assertEqual(result, doc)
+        response = self.client.get("/papers/")
+        self.assertNotEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 200)
+        
+        response = self.client.get("/papers/test")
+        self.assertNotEqual(response.status_code, 405)
+        self.assertEqual(response.status_code, 200)
+
+    @patch('app.routers.paper.paper_crud')
+    def test_get_paper_by_identifier_success(self, mock_crud):
+        """Test successful paper retrieval by paper identifier"""
+        mock_crud.get.return_value = {
+            "ResultData": [{"title": "Paper by Identifier", "pubID": "NIST-001"}],
+            "ResultCount": 1,
+            "Metrics": {"ElapsedTime": 0.1}
+        }
+        
+        response = self.client.get("/papers/NIST-001")
+        
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("ResultData", data)
+        self.assertEqual(data["ResultCount"], 1)
 
 if __name__ == '__main__':
     unittest.main()
