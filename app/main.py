@@ -1,6 +1,6 @@
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
@@ -77,7 +77,7 @@ async def custom_swagger_ui_html(request: Request):
 
 @app.get("/rmm/", include_in_schema=False)
 async def custom_swagger_ui_html_rmm(request: Request):
-    return custom_swagger_ui_html(request)
+    return await custom_swagger_ui_html(request)
 
 @app.get("/openapi.json", include_in_schema=False)
 async def openapi_schema():
@@ -301,8 +301,8 @@ async def debug_record_collection():
     except Exception as e:
         return {"error": str(e)}
     
-@app.get('/favicon.ico')
+@app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    file_name = "favicon.ico"
-    file_path = os.path.join(app.root_path, "static", file_name)
-    return FileResponse(path=file_path, headers={"Content-Disposition": "attachment; filename=" + file_name})
+    return Response(content=base64.b64decode(FAVICON_PNG_BASE64), media_type="image/png")
+
+
