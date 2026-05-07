@@ -1,11 +1,10 @@
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -54,30 +53,32 @@ app = FastAPI(
 )
 
 ROOT_PREFIX = "/rmm"
+APP_DIR = Path(__file__).resolve().parent
+DOCS_HTML_PATH = APP_DIR / "index.html"
 
 app.mount(
     "/static",
-    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    StaticFiles(directory=str(APP_DIR / "static")),
     name="static"
 )
 app.mount(
     f"{ROOT_PREFIX}/static",
-    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    StaticFiles(directory=str(APP_DIR / "static")),
     name="static-root"
 )
+
+
+def docs_html_response() -> FileResponse:
+    return FileResponse(DOCS_HTML_PATH)
+
+
 @app.get("/", include_in_schema=False)
 async def custom_swagger_ui_html(request: Request):
-    return get_swagger_ui_html(
-        openapi_url=f"{ROOT_PREFIX}/openapi.json",
-        title=app.title + " - Docs",
-        swagger_js_url="static/swagger-ui-bundle.js",
-        swagger_css_url="static/swagger-ui.css",
-        swagger_favicon_url="static/favicon.png",
-    )
+    return docs_html_response()
 
 @app.get("/rmm/", include_in_schema=False)
 async def custom_swagger_ui_html_rmm(request: Request):
-    return await custom_swagger_ui_html(request)
+    return docs_html_response()
 
 @app.get("/openapi.json", include_in_schema=False)
 async def openapi_schema():
@@ -304,5 +305,4 @@ async def debug_record_collection():
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
     return Response(content=base64.b64decode(FAVICON_PNG_BASE64), media_type="image/png")
-
 
