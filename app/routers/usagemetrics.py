@@ -50,7 +50,7 @@ async def get_record_metrics(record_id: str = Path(..., description="Record ID t
 async def get_records_metrics(
     page: int = Query(1, ge=1, description="Page number"),
     size: int = Query(10, ge=1, le=100, description="Page size"),
-    sort_by: str = Query("downloads", description="Sort by field (downloads or users)"),
+    sort_by: str = Query("total_size_download", description="Sort by field (total_size_download or users)"),
     sort_order: str = Query("desc", description="Sort order (asc or desc)")
 ):
     """Get metrics for multiple records/datasets with pagination and sorting"""
