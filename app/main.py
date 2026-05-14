@@ -79,6 +79,10 @@ def docs_html_response() -> HTMLResponse:
 async def custom_swagger_ui_html(request: Request):
     return docs_html_response()
 
+@app.head("/", include_in_schema=False)
+async def head_swagger_ui_html():
+    return Response(status_code=200)
+
 @app.get("/rmm/", include_in_schema=False)
 async def custom_swagger_ui_html_rmm(request: Request):
     return docs_html_response()

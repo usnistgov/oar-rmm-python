@@ -18,6 +18,11 @@ class TestMainComprehensive(unittest.TestCase):
         response = self.client.head("/rmm/")
         self.assertEqual(response.status_code, 200)
 
+    def test_root_head_endpoint_returns_200(self):
+        """Test that HEAD / returns 200"""
+        response = self.client.head("/")
+        self.assertEqual(response.status_code, 200)
+
     def test_debug_record_collection_success(self):
         """Test debug record collection endpoint success"""
         response = self.client.get("/debug/record-collection")
