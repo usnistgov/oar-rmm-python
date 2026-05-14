@@ -69,6 +69,7 @@ app.mount(
 
 
 _DOCS_HTML_CONTENT: str = DOCS_HTML_PATH.read_text(encoding="utf-8")
+_DOCS_CONTENT_LENGTH: str = str(len(_DOCS_HTML_CONTENT.encode("utf-8")))
 
 
 def docs_html_response() -> HTMLResponse:
@@ -81,7 +82,7 @@ async def custom_swagger_ui_html(request: Request):
 
 @app.head("/", include_in_schema=False)
 async def head_swagger_ui_html():
-    return Response(status_code=200)
+    return Response(status_code=200, headers={"Content-Length": _DOCS_CONTENT_LENGTH, "Content-Type": "text/html; charset=utf-8"})
 
 @app.get("/rmm/", include_in_schema=False)
 async def custom_swagger_ui_html_rmm(request: Request):
@@ -89,7 +90,7 @@ async def custom_swagger_ui_html_rmm(request: Request):
 
 @app.head("/rmm/", include_in_schema=False)
 async def head_swagger_ui_html_rmm():
-    return Response(status_code=200)
+    return Response(status_code=200, headers={"Content-Length": _DOCS_CONTENT_LENGTH, "Content-Type": "text/html; charset=utf-8"})
 
 @app.get("/openapi.json", include_in_schema=False)
 async def openapi_schema():
