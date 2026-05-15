@@ -13,6 +13,22 @@ class TestMainComprehensive(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("text/html", response.headers["content-type"])
 
+    def test_rmm_head_endpoint_returns_200(self):
+        """Test that HEAD /rmm/ returns 200 with correct headers"""
+        response = self.client.head("/rmm/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("content-length", response.headers)
+        self.assertGreater(int(response.headers["content-length"]), 0)
+        self.assertIn("text/html", response.headers["content-type"])
+
+    def test_root_head_endpoint_returns_200(self):
+        """Test that HEAD / returns 200 with correct headers"""
+        response = self.client.head("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("content-length", response.headers)
+        self.assertGreater(int(response.headers["content-length"]), 0)
+        self.assertIn("text/html", response.headers["content-type"])
+
     def test_debug_record_collection_success(self):
         """Test debug record collection endpoint success"""
         response = self.client.get("/debug/record-collection")
