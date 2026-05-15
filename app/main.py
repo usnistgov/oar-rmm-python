@@ -18,6 +18,8 @@ from app.middleware.exceptions import (
 )
 
 from pymongo.errors import OperationFailure
+from app.logging_setup import setup_logging
+from app.middleware.logging_middleware import RequestLoggingMiddleware
 import os
 import base64
 import logging
@@ -30,6 +32,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Apply logging configuration before anything else so all subsequent
+    # logger calls in startup_event() and request handlers go to the
+    # configured destinations (file under oar-docker, stderr locally).
+    setup_logging()
     # Startup
     startup_event()
     yield
@@ -56,6 +62,9 @@ ROOT_PREFIX = "/rmm"
 APP_DIR = Path(__file__).resolve().parent
 DOCS_HTML_PATH = APP_DIR / "index.html"
 
+_DOCS_HTML_CONTENT: str = DOCS_HTML_PATH.read_text(encoding="utf-8")
+_DOCS_CONTENT_LENGTH: str = str(len(_DOCS_HTML_CONTENT.encode("utf-8")))
+
 app.mount(
     "/static",
     StaticFiles(directory=str(APP_DIR / "static")),
@@ -66,10 +75,6 @@ app.mount(
     StaticFiles(directory=str(APP_DIR / "static")),
     name="static-root"
 )
-
-
-_DOCS_HTML_CONTENT: str = DOCS_HTML_PATH.read_text(encoding="utf-8")
-_DOCS_CONTENT_LENGTH: str = str(len(_DOCS_HTML_CONTENT.encode("utf-8")))
 
 
 def docs_html_response() -> HTMLResponse:
@@ -119,6 +124,7 @@ app.add_middleware(
     GZipMiddleware,
     minimum_size=int(settings.GZIP_MINIMUM_SIZE)
 )
+app.add_middleware(RequestLoggingMiddleware)
 
 # Router for ``field`` needs to come before ``record`` to avoid field queries to get
 # caught in the `record` router
@@ -316,5 +322,5 @@ async def debug_record_collection():
     
 @app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    return Response(content=base64.b64decode(FAVICON_PNG_BASE64), media_type="image/png")
+    return Response(status_code=204)
 
