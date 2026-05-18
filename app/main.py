@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Apply logging configuration before anything else so all subsequent
     # logger calls in startup_event() and request handlers go to the
-    # configured destinations (file under oar-docker, stderr locally).
+    # configured destinations.
     setup_logging()
     # Startup
     startup_event()

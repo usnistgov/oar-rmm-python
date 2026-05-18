@@ -46,7 +46,6 @@ app/main.py).  All other modules just do::
 import json
 import logging
 import logging.config
-import logging.handlers
 import os
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -170,72 +169,31 @@ class RMMFormatter(logging.Formatter):
 # Config builder
 # ---------------------------------------------------------------------------
 
-def build_logging_config(
-    log_file: Optional[str] = None,
-    access_log_file: Optional[str] = None,
-    log_level: str = "INFO",
-) -> dict:
+def build_logging_config(log_level: str = "INFO") -> dict:
     """Return a ``logging.config.dictConfig``-compatible configuration dict.
 
-    When *log_file* is given (production/docker) a ``RotatingFileHandler``
-    writing in RMMFormatter format is used.  When absent (local dev) a
-    colourised ``StreamHandler`` to stderr is used instead.
+    Produces a colourised ``StreamHandler`` to stderr.  Used as the fallback
+    when no ``LOGGING_CONFIG_FILE`` is provided (local development).
 
-    All gunicorn, uvicorn, and application loggers are routed through the same
-    handler so every line in the log file looks identical regardless of where
-    it originated.  Uvicorn's built-in per-request access lines are suppressed
-    (set to WARNING) because ``RequestLoggingMiddleware`` emits richer ones.
+    Uvicorn's built-in per-request access lines are suppressed (set to
+    WARNING) because ``RequestLoggingMiddleware`` emits richer ones.
     """
     formatters = {
-        "rmm": {
-            "()": "app.logging_setup.RMMFormatter",
-            "colorize": False,
-        },
         "rmm_color": {
             "()": "app.logging_setup.RMMFormatter",
             "colorize": True,
         },
     }
 
-    # ---- Main handler (file or console) ----------------------------------
-    if log_file:
-        main_handler: dict = {
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "rmm",
-            "filename": log_file,
-            "mode": "a",
-            "encoding": "utf-8",
-            "maxBytes": 50 * 1024 * 1024,  # 50 MB per file
-            "backupCount": 10,
-            "delay": False,
-        }
-        main_name = "file"
-    else:
-        main_handler = {
+    handlers: dict = {
+        "console": {
             "class": "logging.StreamHandler",
             "formatter": "rmm_color",
             "stream": "ext://sys.stderr",
         }
-        main_name = "console"
-
-    handlers: dict = {main_name: main_handler}
-    root_handlers = [main_name]
-
-    # ---- Access / HTTP log handler ----------------------------------------
-    if access_log_file:
-        handlers["access_file"] = {
-            "class": "logging.handlers.RotatingFileHandler",
-            "formatter": "rmm",
-            "filename": access_log_file,
-            "mode": "a",
-            "encoding": "utf-8",
-            "maxBytes": 50 * 1024 * 1024,
-            "backupCount": 10,
-            "delay": False,
-        }
-        access_handlers = ["access_file"]
-    else:
-        access_handlers = [main_name]
+    }
+    root_handlers = ["console"]
+    access_handlers = ["console"]
 
     return {
         "version": 1,
@@ -292,39 +250,33 @@ def build_logging_config(
 def setup_logging(log_level: Optional[str] = None) -> None:
     """Configure application logging.
 
-    Reads ``LOGGING_CONFIG_FILE`` (default ``/tmp/logging_config.json``) if it
-    exists to extract the log file paths written by the oar-docker entrypoint,
-    then builds and applies a full logging config using ``RMMFormatter`` so all
-    loggers — gunicorn, uvicorn, and application code — write in the same clean
-    aligned format.
+    If the ``LOGGING_CONFIG_FILE`` environment variable points to an existing
+    file, that file is loaded directly with ``logging.config.dictConfig()``.
+    The file must be a JSON-serialised dictConfig mapping
+    (see https://docs.python.org/3/library/logging.config.html#logging-config-dictschema).
 
-    Falls back to a colourised stderr handler when no config file is found
-    (local development).
+    When no config file is provided (local development) a colourised stderr
+    handler is used instead.
 
-    The level can be overridden with the ``LOG_LEVEL`` env var (matches the
-    var already used by the docker entrypoint for gunicorn's ``--log-level``).
+    The level can be overridden with the ``LOG_LEVEL`` env var.
     """
     level = (log_level or os.environ.get("LOG_LEVEL", "info")).upper()
 
-    log_file: Optional[str] = None
-    access_log_file: Optional[str] = None
-
-    config_file = os.environ.get("LOGGING_CONFIG_FILE", "/tmp/logging_config.json")
-    if os.path.isfile(config_file):
+    config_file = os.environ.get("LOGGING_CONFIG_FILE")
+    if config_file and os.path.isfile(config_file):
         try:
             with open(config_file) as fh:
-                file_config = json.load(fh)
-            hdlrs = file_config.get("handlers", {})
-            log_file        = hdlrs.get("file",        {}).get("filename")
-            access_log_file = hdlrs.get("access_file", {}).get("filename")
+                logging.config.dictConfig(json.load(fh))
+            logging.getLogger(__name__).info(
+                "Logging configured | level=%s source=%s", level, config_file
+            )
+            return
         except Exception as exc:
             # Non-fatal — fall through to console handler
-            logging.warning("Could not parse %s: %s — logging to stderr", config_file, exc)
+            logging.warning("Could not load %s: %s — falling back to stderr", config_file, exc)
 
-    config = build_logging_config(log_file, access_log_file, level)
+    config = build_logging_config(log_level=level)
     logging.config.dictConfig(config)
-
-    dest = log_file or "stderr (console)"
     logging.getLogger(__name__).info(
-        "Logging configured | level=%s destination=%s", level, dest
+        "Logging configured | level=%s destination=stderr (console)", level
     )
