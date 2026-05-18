@@ -5,8 +5,6 @@ import logging
 import re
 from app.middleware.exceptions import InternalServerException, ResourceNotFoundException
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class RecordCRUD(BaseCRUD):

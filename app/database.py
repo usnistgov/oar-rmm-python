@@ -5,8 +5,6 @@ from app.config import settings
 import logging
 from app.middleware.exceptions import InternalServerException
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize variables
