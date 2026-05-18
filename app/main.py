@@ -18,6 +18,7 @@ from app.middleware.exceptions import (
 )
 
 from pymongo.errors import OperationFailure
+from app.logging_setup import setup_logging
 import os
 import base64
 import logging
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     # Startup
     startup_event()
     yield
