@@ -1,8 +1,6 @@
 from app.crud.base import BaseCRUD
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class CodeCRUD(BaseCRUD):
