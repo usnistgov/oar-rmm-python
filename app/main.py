@@ -5,7 +5,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -19,6 +18,7 @@ from app.middleware.exceptions import (
 )
 
 from pymongo.errors import OperationFailure
+from app.logging_setup import setup_logging
 import os
 import base64
 import logging
@@ -35,6 +35,7 @@ FAVICON_PNG_BASE64 = (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     # Startup
     startup_event()
     yield
@@ -58,30 +59,44 @@ app = FastAPI(
 )
 
 ROOT_PREFIX = "/rmm"
+APP_DIR = Path(__file__).resolve().parent
+DOCS_HTML_PATH = APP_DIR / "index.html"
 
 app.mount(
     "/static",
-    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    StaticFiles(directory=str(APP_DIR / "static")),
     name="static"
 )
 app.mount(
     f"{ROOT_PREFIX}/static",
-    StaticFiles(directory=str(Path(__file__).resolve().parent / "static")),
+    StaticFiles(directory=str(APP_DIR / "static")),
     name="static-root"
 )
+
+
+_DOCS_HTML_CONTENT: str = DOCS_HTML_PATH.read_text(encoding="utf-8")
+_DOCS_CONTENT_LENGTH: str = str(len(_DOCS_HTML_CONTENT.encode("utf-8")))
+
+
+def docs_html_response() -> HTMLResponse:
+    return HTMLResponse(content=_DOCS_HTML_CONTENT)
+
+
 @app.get("/", include_in_schema=False)
 async def custom_swagger_ui_html(request: Request):
-    return get_swagger_ui_html(
-        openapi_url=f"{ROOT_PREFIX}/openapi.json",
-        title=app.title + " - Docs",
-        swagger_js_url="static/swagger-ui-bundle.js",
-        swagger_css_url="static/swagger-ui.css",
-        swagger_favicon_url="static/favicon.png",
-    )
+    return docs_html_response()
+
+@app.head("/", include_in_schema=False)
+async def head_swagger_ui_html():
+    return Response(status_code=200, headers={"Content-Length": _DOCS_CONTENT_LENGTH, "Content-Type": "text/html; charset=utf-8"})
 
 @app.get("/rmm/", include_in_schema=False)
 async def custom_swagger_ui_html_rmm(request: Request):
-    return custom_swagger_ui_html(request)
+    return docs_html_response()
+
+@app.head("/rmm/", include_in_schema=False)
+async def head_swagger_ui_html_rmm():
+    return Response(status_code=200, headers={"Content-Length": _DOCS_CONTENT_LENGTH, "Content-Type": "text/html; charset=utf-8"})
 
 @app.get("/openapi.json", include_in_schema=False)
 async def openapi_schema():
@@ -308,8 +323,7 @@ async def debug_record_collection():
     except Exception as e:
         return {"error": str(e)}
     
-@app.get('/favicon.ico')
+@app.get('/favicon.ico', include_in_schema=False)
 async def favicon():
-    file_name = "favicon.ico"
-    file_path = os.path.join(app.root_path, "static", file_name)
-    return FileResponse(path=file_path, headers={"Content-Disposition": "attachment; filename=" + file_name})
+    return Response(content=base64.b64decode(FAVICON_PNG_BASE64), media_type="image/png")
+
