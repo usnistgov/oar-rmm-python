@@ -140,6 +140,12 @@ def create_collection_indexes():
                     db[settings.RECORDS_COLLECTION].create_index([("ediid", ASCENDING)])
                     db[settings.RECORDS_COLLECTION].create_index([("doi", ASCENDING)])
                     db[settings.RECORDS_COLLECTION].create_index([("@id", ASCENDING)])
+                    # Facet aggregation indexes
+                    db[settings.RECORDS_COLLECTION].create_index([("topic.tag", ASCENDING)])
+                    db[settings.RECORDS_COLLECTION].create_index([("@type", ASCENDING)])
+                    db[settings.RECORDS_COLLECTION].create_index([("components.@type", ASCENDING)])
+                    db[settings.RECORDS_COLLECTION].create_index([("contactPoint.fn", ASCENDING)])
+                    db[settings.RECORDS_COLLECTION].create_index([("keyword", ASCENDING)])
                     logger.info("Created specific indexes for records collection")
                     
             except Exception as e:
