@@ -123,3 +123,7 @@ app/certificates/*.crt
 app/certificates/*.pem
 app/certificates/*.key
 app/certificates/*.cert
+
+# Patent data artifacts
+app/patents/*.json
+app/patents/*.xlsx

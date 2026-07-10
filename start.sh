@@ -93,6 +93,9 @@ else
     fi
   fi
 
+  # Enable CORS for local frontend dev (override by setting CORS_ORIGINS in shell)
+  export CORS_ORIGINS="${CORS_ORIGINS:-http://localhost:5555}"
+
   echo "🚀 Starting API server..."
   uvicorn app.main:app --reload --log-level debug
 fi

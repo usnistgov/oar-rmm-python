@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     VERSIONS_COLLECTION: str = os.getenv("VERSIONS_COLLECTION", "versions")
     RELEASESETS_COLLECTION: str = os.getenv("RELEASESETS_COLLECTION", "releasesets")
     
+    # CORS (dev only — set CORS_ORIGINS to a comma-separated list of allowed origins)
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "")
+
     # Remote Configuration
     USE_REMOTE_CONFIG: bool = os.getenv("USE_REMOTE_CONFIG", "False").lower() == "true"
     REMOTE_CONFIG_URL: Optional[str] = os.getenv("REMOTE_CONFIG_URL")

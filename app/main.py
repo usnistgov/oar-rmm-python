@@ -9,7 +9,7 @@ from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 from pathlib import Path
 from app.database import connect_db, create_collection_indexes
-from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, usagemetrics, version
+from app.routers import paper, record, field, code, patent, api, releaseset, taxonomy, usagemetrics, version, facets
 from app.config import settings
 from app.middleware.metrics_middleware import MetricsMiddleware
 from app.middleware.exceptions import (
@@ -126,11 +126,21 @@ app.add_middleware(
     minimum_size=int(settings.GZIP_MINIMUM_SIZE)
 )
 
+if settings.CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
 
 # Router for ``field`` needs to come before ``record`` to avoid field queries to get
 # caught in the `record` router
 app.include_router(field.router) 
 app.include_router(record.router)
+app.include_router(facets.router)
 app.include_router(paper.router) 
 app.include_router(code.router)
 app.include_router(patent.router)
