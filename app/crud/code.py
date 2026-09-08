@@ -1,9 +1,17 @@
+"""CRUD operations for the "code" resource collection.
+
+Catalogs NIST software/code repositories (imported from code.gov-style JSON
+via ``app.scripts.populate_code``) and served at ``/code``. Uses a hard-coded
+collection name (``"code"``) rather than a ``settings.*_COLLECTION`` value.
+"""
 from app.crud.base import BaseCRUD
 import logging
 
 logger = logging.getLogger(__name__)
 
 class CodeCRUD(BaseCRUD):
+    """CRUD operations bound to the ``code`` collection."""
+
     def __init__(self):
         """Initialize code collection"""
         super().__init__("code")

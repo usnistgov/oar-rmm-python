@@ -1,3 +1,10 @@
+"""Router for the ``/records`` endpoints (the primary dataset metadata resource).
+
+Thin HTTP layer delegating to ``app.crud.record.record_crud``. Note the
+``field`` router must be included before this one in ``app.main`` so that
+``/records/fields`` is matched by the fields router rather than being
+swallowed by this router's ``/records/{record_id:path}`` catch-all route.
+"""
 from fastapi import APIRouter, Query, Depends, Request
 from typing import List, Optional, Dict, Any
 from app.crud.record import record_crud

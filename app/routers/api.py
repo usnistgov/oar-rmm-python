@@ -1,3 +1,9 @@
+"""Router for the ``/apis`` endpoints (the APIs resource catalog).
+
+Thin HTTP layer that validates query parameters via
+``app.middleware.dependencies.validate_search_params`` and delegates all
+business logic to ``app.crud.api.api_crud``.
+"""
 from fastapi import APIRouter, Query, Body, Depends, Request
 from typing import List, Optional, Dict, Any
 from app.crud.api import api_crud

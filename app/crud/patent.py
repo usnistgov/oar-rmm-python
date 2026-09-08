@@ -1,3 +1,9 @@
+"""CRUD operations for the "patents" resource collection.
+
+Catalogs NIST patents (imported from a static JSON export via
+``app.scripts.populate_patents``), served at ``/patents``. Uses a hard-coded
+collection name (``"patents"``).
+"""
 from app.crud.base import BaseCRUD
 import logging
 from typing import Dict, Any
@@ -5,6 +11,8 @@ from typing import Dict, Any
 logger = logging.getLogger(__name__)
 
 class PatentCRUD(BaseCRUD):
+    """CRUD operations bound to the ``patents`` collection."""
+
     def __init__(self):
         """Initialize patents collection"""
         super().__init__("patents")
@@ -22,14 +30,19 @@ class PatentCRUD(BaseCRUD):
         return super().create(data)
 
     def get(self, patent_id: str) -> dict:
-        """
-        Get a single patent by ID or patent number.
-        
+        """Get a single patent by MongoDB ID or patent number.
+
+        First attempts a MongoDB ``_id`` lookup via :meth:`BaseCRUD.get`. If
+        that fails, falls back to searching by the ``"Patent #"`` field.
+
         Args:
-            patent_id (str): The ID or patent number to retrieve
-            
+            patent_id: A MongoDB ``_id`` string or a patent number.
+
         Returns:
-            dict: The patent data with metrics
+            dict: ``{"ResultCount": 1, "ResultData": doc, "Metrics": {...}}``.
+
+        Raises:
+            ValueError: If no patent matches either the ID or patent number.
         """
         # Try getting by MongoDB ID first
         try:

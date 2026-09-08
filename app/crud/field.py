@@ -1,3 +1,11 @@
+"""CRUD operations for the "fields" resource collection.
+
+The fields collection describes the searchable/filterable metadata fields
+available on records (used by API clients to build dynamic search UIs),
+served at ``/records/fields``. This module is a thin wrapper around
+:class:`~app.crud.base.BaseCRUD` that unwraps the standard result envelope
+into bare documents/lists for its callers.
+"""
 from app.crud.base import BaseCRUD
 from app.config import settings
 
@@ -6,6 +14,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class FieldCRUD(BaseCRUD):
+    """CRUD operations bound to the fields collection (``settings.FIELDS_COLLECTION``)."""
+
     def __init__(self):
             super().__init__(settings.FIELDS_COLLECTION)
         

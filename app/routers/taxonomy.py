@@ -1,3 +1,7 @@
+"""Router for the ``/taxonomy`` endpoints (the subject/topic taxonomy).
+
+Thin HTTP layer delegating to ``app.crud.taxonomy.taxonomy_crud``.
+"""
 from fastapi import APIRouter, Query, Body, Depends, Request
 from typing import List, Optional, Dict, Any
 from app.crud.taxonomy import taxonomy_crud

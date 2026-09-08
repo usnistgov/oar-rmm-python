@@ -1,3 +1,9 @@
+"""Router for the ``/code`` endpoints (the code-repository resource catalog).
+
+Thin HTTP layer that validates query parameters via
+``app.middleware.dependencies.validate_search_params`` and delegates all
+business logic to ``app.crud.code.code_crud``.
+"""
 from fastapi import APIRouter, Query, Depends, Body, Request
 from typing import List, Optional, Dict, Any
 from app.crud.code import code_crud
@@ -30,7 +36,13 @@ async def search_code(request: Request, params: Dict[str, Any] = Depends(validat
 
 @router.get("/code/{code_id}")
 async def get_code(request: Request, code_id: str):
-    """
-    Get a single code entry by ID
+    """Get a single code entry by ID.
+
+    Args:
+        request: The incoming request (unused).
+        code_id: The MongoDB ``_id`` of the code entry to retrieve.
+
+    Returns:
+        Dict: The code entry result envelope from ``code_crud.get``.
     """
     return code_crud.get(code_id)

@@ -1,3 +1,13 @@
+"""CRUD operations for usage-metrics data, served under ``/usagemetrics``.
+
+Reads from the ``metrics_db`` (a separate MongoDB database/connection from the
+main resource data, see ``app.database.connect_metrics_db``) across four
+collections: per-record download metrics (``recordMetrics``), per-file
+download metrics (``fileMetrics``), repository-level rollups (``repoMetrics``),
+and unique-user counts (``uniqueUsers``). Numeric fields are sanitized before
+returning so that non-JSON-compliant floats (``NaN``/``inf``) never reach API
+responses.
+"""
 from datetime import datetime
 from app.database import db, metrics_db
 from app.crud.metrics_base import MetricsBaseCRUD
@@ -8,6 +18,8 @@ import math
 logger = logging.getLogger(__name__)
 
 class MetricsCRUD:
+    """Read access to the usage-metrics collections in the metrics database."""
+
     def __init__(self):
         """Initialize metrics collections"""
         # Use the original metrics collection
@@ -18,13 +30,26 @@ class MetricsCRUD:
         self.metrics_base = MetricsBaseCRUD()
 
     def _sanitize_float_for_json(self, value, default_if_non_finite=0):
-        """Sanitizes float values that are not JSON compliant (NaN, inf, -inf)."""
+        """Replace non-finite floats (``NaN``/``inf``/``-inf``) with a JSON-safe default."""
         if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
             return default_if_non_finite
         return value
     
     def get_record_metrics(self, record_id):
-        """Get metrics for a specific record"""
+        """Get download/usage metrics for a single record.
+
+        Matches ``record_id`` against ``pdrid``, ``ediid``, or ``@id``, with a
+        suffix-regex fallback (matching MDS-style short identifiers) when
+        ``record_id`` does not start with ``"ark:"``.
+
+        Args:
+            record_id: A PDR ID, EDIID, ``@id``, or MDS-style suffix.
+
+        Returns:
+            dict | None: ``{"DataSetMetricsCount": 1, "PageSize": 0,
+            "DataSetMetrics": [metrics_dict]}``, or ``None`` if no metrics
+            document matches.
+        """
         query_conditions = [
             {"pdrid": record_id}, 
             {"ediid": record_id},
@@ -62,7 +87,19 @@ class MetricsCRUD:
         }
     
     def get_record_metrics_list(self, page=1, size=10, sort_by="total_size_download", sort_order=-1):
-        """Get metrics for a list of records"""
+        """Get a paginated, sorted list of per-record metrics.
+
+        Args:
+            page: 1-based page number.
+            size: Number of records per page.
+            sort_by: Either ``"total_size_download"`` or ``"users"``; any
+                other value falls back to sorting by ``number_users``.
+            sort_order: ``-1``/``"desc"`` for descending, else ascending.
+
+        Returns:
+            dict: ``{"DataSetMetricsCount": int, "PageSize": int,
+            "DataSetMetrics": [metrics_dict, ...]}``.
+        """
         # Determine sort field
         if sort_by == "total_size_download":
             sort_field_db = "total_size_download"
@@ -112,7 +149,15 @@ class MetricsCRUD:
         }
     
     def get_repo_metrics(self):
-        """Get repository‐level metrics directly from the database"""
+        """Get repository-level metrics, sorted by most recent timestamp first.
+
+        Excludes the internal ``ip_list`` field and sanitizes non-finite
+        floats (``success_download``, ``unique_users``) before returning.
+
+        Returns:
+            dict: ``{"RepoMetricsCount": int, "PageSize": 0,
+            "RepoMetrics": [doc, ...]}``.
+        """
         results = list(self.repo_metrics
             .find({}, {"_id": 0, "ip_list": 0})
             .sort([("timestamp", DESCENDING)])
@@ -135,7 +180,24 @@ class MetricsCRUD:
         }
     
     def get_file_metrics(self, file_path, recordid=None):
-        """Get metrics for a specific file or all files for a record"""
+        """Get metrics for one file, or all files belonging to a record.
+
+        When ``file_path`` is empty, returns every file-metrics document
+        whose ``ediid``/``pdrid`` matches ``recordid`` (with an MDS-suffix
+        regex fallback). When ``file_path`` is given, first tries an exact
+        ``filepath`` match; if that fails and ``file_path`` doesn't look like
+        a real path (no ``/`` or ``.``), it is treated as a record identifier
+        instead and all of that record's files are returned.
+
+        Args:
+            file_path: Exact file path to look up, or ``""`` to look up by
+                record only.
+            recordid: Record identifier used when ``file_path`` is empty.
+
+        Returns:
+            dict | None: ``{"FilesMetricsCount": int, "PageSize": 0,
+            "FilesMetrics": [doc, ...]}``, or ``None`` if nothing matches.
+        """
         
         if not file_path:
             # Try multiple ways to find by record ID - return ALL files for this record
@@ -205,7 +267,18 @@ class MetricsCRUD:
         }
     
     def get_file_metrics_list(self, params=None):
-        """Get metrics for all files with ProcessRequest paging/sorting support."""
+        """Get a paginated/sorted list of all file metrics.
+
+        Args:
+            params: Raw query parameters (as accepted by
+                ``MetricsBaseCRUD.process_metrics_query``); if neither
+                ``sort.desc`` nor ``sort.asc`` is present, defaults to sorting
+                by ``success_get`` descending.
+
+        Returns:
+            dict: Result envelope keyed under ``"FilesMetrics"`` (see
+            :meth:`~app.crud.metrics_base.MetricsBaseCRUD.process_metrics_query`).
+        """
         params = params or {}
         params = params.copy()
 
@@ -220,7 +293,16 @@ class MetricsCRUD:
         )
 
     def get_total_unique_users(self, params=None):
-        """Return paginated total unique user metrics leveraging ProcessRequest compatible params."""
+        """Get a paginated list of unique-user metrics.
+
+        Args:
+            params: Raw query parameters (as accepted by
+                ``MetricsBaseCRUD.process_metrics_query``).
+
+        Returns:
+            dict: Result envelope keyed under ``"TotalUsers"`` (see
+            :meth:`~app.crud.metrics_base.MetricsBaseCRUD.process_metrics_query`).
+        """
         params = params or {}
         return self.metrics_base.process_metrics_query(
             self.unique_users,

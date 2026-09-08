@@ -1,3 +1,7 @@
+"""Router for the ``/versions`` endpoints (individual versioned resource releases).
+
+Thin HTTP layer delegating to ``app.crud.version.version_crud``.
+"""
 from fastapi import APIRouter, Query, Body, Depends, Request
 from typing import List, Optional, Dict, Any
 from app.crud.version import version_crud

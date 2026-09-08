@@ -1,3 +1,22 @@
+"""Application configuration for the NIST RMM API.
+
+Defines the :class:`Settings` model (a ``pydantic-settings`` ``BaseSettings``
+subclass) holding all configurable values: MongoDB connection details for both
+the main and metrics databases, collection names, CORS/Gzip options, and the
+configuration-source strategy.
+
+Configuration can come from three sources, chosen by :meth:`Settings.load`:
+
+1. **Remote** — a Spring Cloud Config (or plain JSON) endpoint, when
+   ``USE_REMOTE_CONFIG=true`` and ``REMOTE_CONFIG_URL`` is set.
+2. **Local file** — a JSON file at ``LOCAL_CONFIG_FILE``, using the same
+   Java-style dotted-key mapping as the remote source.
+3. **Environment** — ``.env`` file / OS environment variables (the default).
+
+The module-level ``settings`` singleton (created at import time via
+``Settings.load()``) is the object the rest of the application imports and
+uses, e.g. ``from app.config import settings``.
+"""
 from typing import Optional, Dict, Any
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import os
@@ -15,6 +34,13 @@ dotenv_path = os.path.join(BASE_DIR, '.env')
 load_dotenv(dotenv_path=dotenv_path)
 
 class Settings(BaseSettings):
+    """Typed application settings, sourced from ``.env``/environment variables
+    by default, with optional overrides from a remote config server or a
+    local JSON file (see :meth:`load`).
+
+    Every field has a sane default so the application can start in a bare
+    local-development environment without any ``.env`` file present.
+    """
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding='utf-8'
@@ -70,7 +96,12 @@ class Settings(BaseSettings):
     LOCAL_CONFIG_FILE: Optional[str] = os.getenv("LOCAL_CONFIG_FILE")
         
     def show_config_source(self):
-        """Print the source of the current configuration"""
+        """Log and return the human-readable source of the active configuration.
+
+        Returns:
+            str: The value of ``CONFIG_SOURCE`` (e.g. ``"environment"``,
+            ``"file:<path>"``, or ``"remote:<url>"``).
+        """
         logger.info(f"Configuration source: {self.CONFIG_SOURCE}")
         return self.CONFIG_SOURCE
     
@@ -263,7 +294,20 @@ class Settings(BaseSettings):
     
     @classmethod
     def from_file(cls, file_path: str) -> 'Settings':
-        """Load configuration from a local JSON file"""
+        """Load configuration by reading a local JSON file.
+
+        The JSON is parsed with the same Java-style dotted-key mapping used
+        for remote config (see :meth:`_parse_remote_json`), so the same file
+        format works for both ``LOCAL_CONFIG_FILE`` and remote endpoints.
+
+        Args:
+            file_path: Path to a JSON configuration file.
+
+        Returns:
+            Settings: A settings instance with environment-variable defaults
+            overridden by values found in the file. Falls back to default
+            environment-based settings if the file is missing or invalid.
+        """
         try:
             logger.info(f"Loading configuration from file: {file_path}")
             with open(file_path, 'r') as f:

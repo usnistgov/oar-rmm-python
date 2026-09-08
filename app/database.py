@@ -1,3 +1,22 @@
+"""MongoDB connection management and index setup for the RMM API.
+
+This module owns two separate pymongo connections:
+
+- The **main** database (``db``), holding the primary resource collections
+  (records, taxonomy, resources/APIs, fields, versions, release sets).
+- The **metrics** database (``metrics_db``), holding usage-metrics collections
+  (record/file/repo metrics, unique users). This may be a different MongoDB
+  server/database than the main one, configured independently via
+  ``MONGO_URI_METRICS``/``METRICS_DB_NAME``.
+
+Both connections are established eagerly at import time (see the bottom of
+this module) so that ``app.database.db`` and ``app.database.metrics_db`` are
+ready to use as soon as the module is imported anywhere in the app.
+
+Index creation (:func:`create_collection_indexes`) is defined here but is
+**not** invoked automatically — in production, indexes are managed by a
+separate container/process in the Docker deployment.
+"""
 import time
 from pymongo import MongoClient, ASCENDING, TEXT
 from pymongo.errors import OperationFailure
@@ -31,7 +50,20 @@ metrics_collections = [
 ]
 
 def connect_db():
-    """Connect to MongoDB and return the database instance"""
+    """Connect to the main MongoDB instance and return the database handle.
+
+    Retries the connection up to 3 times with a 2-second delay between
+    attempts (transient startup races with the MongoDB container are common
+    in Docker Compose environments). Updates the module-level ``client`` and
+    ``db`` globals as a side effect.
+
+    Returns:
+        pymongo.database.Database: The connected main database, named per
+        ``settings.DB_NAME``.
+
+    Raises:
+        InternalServerException: If all retry attempts fail to connect.
+    """
     global client, db
     
     retry_count = 3
@@ -54,7 +86,22 @@ def connect_db():
                 raise InternalServerException(f"Database connection error: {str(e)}")
             
 def connect_metrics_db():
-    """Connect to metrics MongoDB and return the database instance"""
+    """Connect to the metrics MongoDB instance and return the database handle.
+
+    Reuses the main :data:`client` connection when the metrics database lives
+    on the same MongoDB URI as the main database, otherwise opens a separate
+    connection using ``settings.MONGO_URI_METRICS``. Retries up to 3 times
+    with a 2-second delay between attempts, matching :func:`connect_db`.
+
+    Unlike :func:`connect_db`, failure here does **not** raise — usage metrics
+    are considered a non-critical feature, so the API should continue to start
+    and serve non-metrics endpoints even if the metrics database is
+    unavailable.
+
+    Returns:
+        pymongo.database.Database | None: The connected metrics database, or
+        ``None`` if all retry attempts failed.
+    """
     global metrics_client, metrics_db
     
     retry_count = 3
@@ -90,7 +137,22 @@ def connect_metrics_db():
                 return None 
 
 def create_text_index(collection_name, database=None):
-    """Create text index for a collection with error handling"""
+    """Create a wildcard full-text index (``$**``) on a collection.
+
+    A wildcard text index allows ``$text`` search queries across every string
+    field in the collection's documents without needing to enumerate them.
+
+    Args:
+        collection_name: Name of the collection to index.
+        database: The pymongo database to operate on; defaults to the main
+            :data:`db` when not provided (used for the metrics database or
+            tests to target a different database).
+
+    Returns:
+        bool: ``True`` if the index was created (or the collection does not
+        yet exist, so index creation is deferred), ``False`` if index
+        creation failed with an exception.
+    """
     try:
         target_db = database or db
         if collection_name not in target_db.list_collection_names():

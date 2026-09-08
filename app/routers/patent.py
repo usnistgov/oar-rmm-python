@@ -1,3 +1,11 @@
+"""Router for the ``/patents`` endpoints (the patents resource catalog).
+
+Thin HTTP layer that validates query parameters via
+``app.middleware.dependencies.validate_search_params``, remaps legacy/friendly
+parameter names (``sort_asc``/``sort_desc``, ``laboratory``, ``status``,
+``file_date``) to the field names actually used in the patents documents, and
+delegates business logic to ``app.crud.patent.patent_crud``.
+"""
 from fastapi import APIRouter, Depends, Request
 from typing import Dict, Any
 from app.crud.patent import patent_crud
@@ -42,5 +50,16 @@ async def search_patents(request: Request, params: Dict[str, Any] = Depends(vali
 
 @router.get("/patents/{patent_id}")
 async def get_patent(patent_id: str):
-    """Get a patent by ID or patent number"""
+    """Get a patent by MongoDB ID or patent number.
+
+    Args:
+        patent_id: A MongoDB ``_id`` string or a value matching the
+            ``"Patent #"`` field.
+
+    Returns:
+        Dict: The patent result envelope from ``patent_crud.get``.
+
+    Raises:
+        ValueError: If no patent matches either the ID or patent number.
+    """
     return patent_crud.get(patent_id)

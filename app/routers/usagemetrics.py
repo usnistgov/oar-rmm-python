@@ -1,3 +1,10 @@
+"""Router for the ``/usagemetrics`` endpoints (record/file/repo/user download metrics).
+
+Thin HTTP layer delegating to ``app.crud.metrics.metrics_crud``. Response
+payloads are passed through :func:`sanitize_response` before being returned so
+that non-JSON-compliant floats (``NaN``/``inf``) and raw ``datetime`` objects
+never reach the client as invalid JSON.
+"""
 from fastapi import APIRouter, Path, Query, HTTPException, Request
 from fastapi.responses import JSONResponse
 from typing import Optional
@@ -10,7 +17,19 @@ router = APIRouter(
 )
 
 def sanitize_response(data: dict) -> dict:
-    """Sanitize the response data to ensure JSON compliance"""
+    """Recursively sanitize a response payload to guarantee valid JSON output.
+
+    Replaces non-finite floats (``NaN``/``inf``/``-inf``) with ``0`` and
+    converts any ``datetime``-like object (anything with an ``isoformat``
+    method) to its ISO-8601 string form, recursing through nested dicts and
+    lists.
+
+    Args:
+        data: The response payload to sanitize.
+
+    Returns:
+        dict: A JSON-safe copy of ``data`` (or ``data`` unchanged if falsy).
+    """
     if not data:
         return data
         
@@ -40,7 +59,17 @@ def _collapse_query_params(query_params) -> dict:
 
 @router.get("/records/{record_id:path}")
 async def get_record_metrics(record_id: str = Path(..., description="Record ID to get metrics for")):
-    """Get metrics for a specific record/dataset"""
+    """Get download/usage metrics for a single record/dataset.
+
+    Args:
+        record_id: PDR ID, EDIID, or ``@id`` of the record.
+
+    Returns:
+        JSONResponse: Sanitized metrics payload for the record.
+
+    Raises:
+        HTTPException: 404 if no metrics exist for ``record_id``.
+    """
     metrics = metrics_crud.get_record_metrics(record_id)
     if not metrics:
         raise HTTPException(status_code=404, detail=f"Metrics for record {record_id} not found")
@@ -53,7 +82,17 @@ async def get_records_metrics(
     sort_by: str = Query("total_size_download", description="Sort by field (total_size_download or users)"),
     sort_order: str = Query("desc", description="Sort order (asc or desc)")
 ):
-    """Get metrics for multiple records/datasets with pagination and sorting"""
+    """Get a paginated, sorted list of metrics across all records/datasets.
+
+    Args:
+        page: 1-based page number.
+        size: Number of results per page (1-100).
+        sort_by: Field to sort by (``"total_size_download"`` or ``"users"``).
+        sort_order: ``"asc"`` or ``"desc"``.
+
+    Returns:
+        JSONResponse: Sanitized paginated record-metrics payload.
+    """
     metrics = metrics_crud.get_record_metrics_list(
         page=page, 
         size=size, 
@@ -64,7 +103,22 @@ async def get_records_metrics(
 
 @router.get("/files/{file_path:path}")
 async def get_file_metrics(file_path: str = Path(..., description="File path to get metrics for")):
-    """Get metrics for a specific file"""
+    """Get download metrics for a specific file, identified by an ARK/record-scoped path.
+
+    Parses ``file_path`` to separate a record identifier (ARK ID or plain
+    record ID prefix) from the file-relative path, then delegates to
+    :meth:`app.crud.metrics.MetricsCRUD.get_file_metrics`.
+
+    Args:
+        file_path: Combined ``{record_id}/{file_path}`` path segment, or an
+            ``ark:.../...`` style path.
+
+    Returns:
+        JSONResponse: Sanitized metrics payload for the file.
+
+    Raises:
+        HTTPException: 404 if no metrics exist for the resolved file.
+    """
     record_id = ""
     file_id = file_path
     
@@ -97,7 +151,21 @@ async def get_files_metrics(
     sort_desc: Optional[str] = Query(None, alias="sort.desc", description="Comma-separated fields to sort descending"),
     sort_asc: Optional[str] = Query(None, alias="sort.asc", description="Comma-separated fields to sort ascending")
 ):
-    """Get metrics for all files with paging, sorting, and filtering support."""
+    """Get a paginated, sorted, filterable list of metrics across all files.
+
+    Args:
+        request: The incoming request, used to collect arbitrary filter
+            query parameters beyond the explicitly declared ones.
+        page: 1-based page number.
+        size: Number of results per page (0 returns all).
+        sort_by: Legacy single-field sort fallback.
+        sort_order: Legacy sort direction for ``sort_by``.
+        sort_desc: Comma-separated fields to sort descending (preferred).
+        sort_asc: Comma-separated fields to sort ascending (preferred).
+
+    Returns:
+        JSONResponse: Sanitized paginated file-metrics payload.
+    """
     params = _collapse_query_params(request.query_params)
     params["page"] = str(page)
     params["size"] = str(size)
@@ -117,7 +185,11 @@ async def get_files_metrics(
 
 @router.get("/repo")
 async def get_repo_metrics():
-    """Get repository-level metrics"""
+    """Get repository-level usage metrics (aggregated download/user totals).
+
+    Returns:
+        JSONResponse: Sanitized repository-metrics payload.
+    """
     metrics = metrics_crud.get_repo_metrics()
     return JSONResponse(content=sanitize_response(metrics))
 
@@ -129,7 +201,19 @@ async def get_unique_users(
     sort_desc: Optional[str] = Query(None, alias="sort.desc", description="Comma-separated fields to sort descending"),
     sort_asc: Optional[str] = Query(None, alias="sort.asc", description="Comma-separated fields to sort ascending")
 ):
-    """Get paginated total unique user metrics matching query filters."""
+    """Get a paginated count of unique users matching optional filters.
+
+    Args:
+        request: The incoming request, used to collect arbitrary filter
+            query parameters beyond the explicitly declared ones.
+        page: 1-based page number.
+        size: Number of results per page (0 returns all).
+        sort_desc: Comma-separated fields to sort descending.
+        sort_asc: Comma-separated fields to sort ascending.
+
+    Returns:
+        JSONResponse: ``{"TotalUsersCount": int}``, sanitized for JSON output.
+    """
     params = _collapse_query_params(request.query_params)
     params["page"] = str(page)
     params["size"] = str(size)

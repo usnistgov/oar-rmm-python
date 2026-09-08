@@ -1,3 +1,11 @@
+"""One-off/ops script that populates the ``patents`` collection from a static JSON export.
+
+Reads the patents JSON file bundled at ``app/patents/5.8.23.json``, converts
+epoch-millisecond date fields to ISO-8601 strings, and inserts each record via
+``app.crud.patent.patent_crud``. Intended to be run manually or as part of a
+data refresh job (``python -m app.scripts.populate_patents``), not imported by
+the running API server.
+"""
 import json
 import logging
 from pathlib import Path
@@ -9,7 +17,21 @@ from app.middleware.exceptions import InternalServerException
 logger = logging.getLogger(__name__)
 
 def populate_patents_collection():
-    """Populate patents collection with data from JSON file"""
+    """Drop, re-index, and repopulate the ``patents`` collection from the bundled JSON file.
+
+    Reads ``app/patents/5.8.23.json``, converts the ``File Date``,
+    ``Patent Issue Date``, ``Expiration Date``, and ``Publication Date``
+    fields from epoch milliseconds to ISO-8601 strings (setting them to
+    ``None`` if conversion fails), and inserts each patent via
+    ``patent_crud.create``.
+
+    Returns:
+        bool: ``True`` on success.
+
+    Raises:
+        InternalServerException: If the patents file is missing or the
+            collection cannot be populated.
+    """
     try:
         # Get path to patents JSON file
         patents_file = Path(__file__).parent.parent / "patents" / "5.8.23.json"

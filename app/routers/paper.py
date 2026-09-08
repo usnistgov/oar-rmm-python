@@ -1,3 +1,10 @@
+"""Router for the ``/papers`` endpoints (the research-papers resource catalog).
+
+Thin HTTP layer that validates query parameters via
+``app.middleware.dependencies.validate_search_params``, remaps legacy
+``sort_asc``/``sort_desc`` parameter names to ``sort.asc``/``sort.desc``, and
+delegates business logic to ``app.crud.paper.paper_crud``.
+"""
 from fastapi import APIRouter, Depends, Request
 from typing import Dict, Any
 from app.crud.paper import paper_crud
@@ -37,5 +44,16 @@ async def search_papers(request: Request, params: Dict[str, Any] = Depends(valid
 
 @router.get("/papers/{paper_id}")
 async def get_paper(paper_id: str):
-    """Get a paper by ID or paper identifier"""
+    """Get a paper by MongoDB ID or an alternate paper identifier.
+
+    Args:
+        paper_id: A MongoDB ``_id``, DOI, ``pubID``, or other identifier
+            (see ``PaperCRUD.get`` for the full fallback lookup order).
+
+    Returns:
+        Dict: The paper result envelope from ``paper_crud.get``.
+
+    Raises:
+        ValueError: If no paper matches any of the attempted identifiers.
+    """
     return paper_crud.get(paper_id)

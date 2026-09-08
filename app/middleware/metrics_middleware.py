@@ -1,3 +1,13 @@
+"""Starlette middleware that records download metrics for record-lookup requests.
+
+NOTE: This middleware is currently defined but **not** registered on the app
+(see the commented-out ``app.add_middleware(MetricsMiddleware)`` line in
+``app.main``). It also calls ``metrics_crud.record_download(...)``, a method
+that is not defined on :class:`~app.crud.metrics.MetricsCRUD` in the current
+codebase — enabling this middleware as-is would raise an ``AttributeError``
+on every record lookup. Usage metrics are populated by other means in the
+current deployment; this module is kept for potential future rework.
+"""
 import time
 import json
 import logging
@@ -11,7 +21,29 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 class MetricsMiddleware(BaseHTTPMiddleware):
+    """ASGI middleware that detects record-lookup requests and logs a download metric.
+
+    Recognizes two request shapes as a "record lookup": path-based
+    (``GET /records/{id}`` with no query params) and query-based
+    (``GET /records?@id=...``). For those, it reads the response body to
+    extract the record's ``ediid`` and forwards a download event to
+    :func:`app.crud.metrics.metrics_crud.record_download`. All other requests
+    pass through unmodified.
+    """
+
     async def dispatch(self, request: Request, call_next):
+        """Intercept a request/response cycle to record metrics for record lookups.
+
+        Args:
+            request: The incoming Starlette request.
+            call_next: Callable that invokes the next middleware/route handler
+                and returns its response.
+
+        Returns:
+            Response: The (possibly reconstructed) response to send to the
+            client. Reconstruction is necessary because the response body
+            stream is consumed while extracting metrics data.
+        """
         # Record request start time
         start_time = time.time()
         
@@ -73,7 +105,25 @@ class MetricsMiddleware(BaseHTTPMiddleware):
         return response
         
     async def _process_record_metrics(self, response, record_id, client_ip, user_agent="", referrer=""):
-        """Process and record metrics for a record lookup"""
+        """Extract metrics from a record-lookup response and forward them for recording.
+
+        Reads and re-assembles the streamed response body in order to parse
+        the ``ediid`` out of the JSON payload, then calls
+        ``metrics_crud.record_download`` with the collected metadata.
+
+        Args:
+            response: The original response produced by the route handler.
+            record_id: The record identifier extracted from the request path
+                or query string.
+            client_ip: IP address of the requesting client.
+            user_agent: Value of the ``User-Agent`` request header.
+            referrer: Value of the ``Referer`` request header.
+
+        Returns:
+            Response: A reconstructed response with the same body, status
+            code, headers, and media type as the original — or the original
+            response unchanged if metrics processing fails.
+        """
         try:
             # Clone the response to read the body
             resp_body = b""

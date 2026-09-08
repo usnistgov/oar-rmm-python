@@ -1,3 +1,23 @@
+"""Generic MongoDB CRUD base class shared by most resource-specific CRUD modules.
+
+:class:`BaseCRUD` implements the read operations (``get``, ``get_all``,
+``search``) common to nearly every resource collection in this API, wrapping
+them in the application's standard result envelope::
+
+    {
+        "ResultCount": int,
+        "ResultData": [...],
+        "PageSize": int,       # present on paginated methods
+        "Metrics": {"ElapsedTime": float}
+    }
+
+Subclasses (see app.crud.field, app.crud.record, etc.) instantiate
+``BaseCRUD`` with a specific collection name and typically override or
+reuse these methods as-is; several also call ``super().create(data)`` even
+though this base class does not currently define a ``create`` method — those
+call sites are dead code paths inherited from an earlier version of the API
+and are not exercised by any router.
+"""
 from app.middleware.request_processor import ProcessRequest
 from app.middleware.exceptions import ResourceNotFoundException, InternalServerException, KeyWordNotFoundException, IllegalArgumentException
 from typing import Dict, Any, List, Optional
@@ -9,12 +29,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 class BaseCRUD:
+    """Generic read-oriented CRUD wrapper around a single MongoDB collection.
+
+    Provides ID lookup (:meth:`get`), paginated listing (:meth:`get_all`), and
+    parameterized search (:meth:`search`), each returning the application's
+    standard result envelope and translating failures into the custom
+    exceptions defined in ``app.middleware.exceptions``.
+    """
+
     def __init__(self, collection_name: str):
+        """Bind this CRUD instance to a MongoDB collection.
+
+        Args:
+            collection_name: Name of the MongoDB collection to operate on
+                (looked up from the shared ``app.database.db`` handle).
+        """
         self.collection = db[collection_name]
         self.request_processor = ProcessRequest()
 
     def get(self, doc_id: str) -> Dict[str, Any]:
-        """Get a single document by ID"""
+        """Fetch a single document by its MongoDB ``_id``.
+
+        Args:
+            doc_id: String form of the document's ``ObjectId``.
+
+        Returns:
+            dict: ``{"ResultCount": 1, "ResultData": [doc], "Metrics": {...}}``
+            with the document's ``_id`` converted to a string.
+
+        Raises:
+            ResourceNotFoundException: If no document with that ID exists.
+            InternalServerException: If the lookup fails for any other reason
+                (e.g. ``doc_id`` is not a valid ``ObjectId``).
+        """
         print(f"Getting document with ID: {doc_id}")
         start_time = time.time()
         try:
@@ -35,7 +82,23 @@ class BaseCRUD:
             raise InternalServerException(f"Failed to retrieve document: {str(e)}")
 
     def get_all(self, skip: int = 0, limit: int = 10, **filters) -> Dict[str, Any]:
-        """Get all documents with optional filtering"""
+        """List documents in the collection with optional pagination and equality filters.
+
+        Args:
+            skip: Number of matching documents to skip (for pagination).
+            limit: Maximum number of documents to return; ``0`` returns all
+                matching documents with no limit applied.
+            **filters: Additional field=value pairs passed directly to
+                MongoDB's ``find()`` as an equality filter.
+
+        Returns:
+            dict: ``{"ResultCount": int, "ResultData": [...], "PageSize": int,
+            "Metrics": {...}}``. ``_id`` is excluded from returned documents.
+
+        Raises:
+            KeyWordNotFoundException: If no documents match ``filters``.
+            InternalServerException: If the query fails for any other reason.
+        """
         start_time = time.time()
         try:
             cursor = self.collection.find(
@@ -68,7 +131,32 @@ class BaseCRUD:
             raise InternalServerException(f"Failed to retrieve documents: {str(e)}")
         
     def search(self, **kwargs) -> Dict[str, Any]:
-        """Generic search function"""
+        """Run a parameterized search against the collection.
+
+        Delegates query construction (filtering, sorting, pagination,
+        projection, and logical AND/OR grouping) to a fresh
+        ``app.middleware.request_processor.ProcessRequest`` instance built
+        from ``kwargs`` (typically the raw query-string parameters from a
+        router). See :class:`~app.middleware.request_processor.ProcessRequest`
+        for the supported parameter keys.
+
+        Args:
+            **kwargs: Raw search parameters, e.g. ``searchphrase``, ``skip``,
+                ``limit``, ``sort.asc``/``sort.desc``, ``include``/``exclude``,
+                ``logicalOp``, and arbitrary field-name filters.
+
+        Returns:
+            dict: ``{"ResultCount": int, "ResultData": [...], "PageSize": int,
+            "Metrics": {...}}``. Returns an empty ``ResultData`` list (rather
+            than raising) when the query is well-formed but matches nothing.
+
+        Raises:
+            KeyWordNotFoundException: If the collection itself is empty.
+            IllegalArgumentException: If the search parameters cannot be
+                translated into a valid MongoDB query.
+            InternalServerException: If the underlying MongoDB query execution
+                fails.
+        """
         start_time = time.time()
         try:
             # Create new request processor instance for each search

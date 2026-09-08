@@ -1,3 +1,7 @@
+"""Router for the ``/releasesets`` endpoints (grouped versioned resource releases).
+
+Thin HTTP layer delegating to ``app.crud.releaseset.releaseset_crud``.
+"""
 from fastapi import APIRouter, Query, Body, Depends, Request
 from typing import List, Optional, Dict, Any
 from app.crud.releaseset import releaseset_crud

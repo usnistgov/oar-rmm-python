@@ -1,3 +1,17 @@
+"""CRUD operations for the "records" resource collection (the core dataset metadata).
+
+Records are the primary resource of the RMM API — dataset/publication metadata
+documents served at ``/records``. Beyond the basic ID lookup and pagination
+inherited from :class:`~app.crud.base.BaseCRUD`, this module implements
+:meth:`RecordCRUD.search`, which runs a single MongoDB ``$facet`` aggregation
+pipeline to return a paginated page of matching records *and* facet counts
+(topics, resource types, components, authors, keywords) in one round-trip,
+including optional counts contributed by the external "code"/"papers"/"patents"
+collections when the caller has selected those product types.
+
+See also ``app.crud.facets`` for the standalone full-corpus (non-paginated)
+facet aggregation endpoint.
+"""
 from __future__ import annotations
 
 import time
@@ -106,6 +120,15 @@ def _parse_product_selection(products, external) -> set:
 
     Deselecting a product type (omitting it from `products`) removes its bucket,
     so its resourceTypes entry drops to the count within the current result set.
+
+    Args:
+        products: Raw ``products`` query-parameter value (comma-separated
+            string of product keys/aliases), or ``None``.
+        external: Raw ``external`` query-parameter value acting as a master
+            on/off switch for external product counts, or ``None``.
+
+    Returns:
+        set: Subset of ``{"code", "papers", "patents"}`` to include.
     """
     if external is not None and str(external).strip().lower() in _FALSY_FLAGS:
         return set()
@@ -131,6 +154,14 @@ def _external_text_query(searchphrase, topic_tag) -> dict:
     $text search — the same text-search mechanism their own /papers, /code and
     /patents endpoints use. Returns {} when there is no searchphrase and no
     topic (an unfiltered browse), for which the full-corpus total is correct.
+
+    Args:
+        searchphrase: Free-text search term from the records query, or empty.
+        topic_tag: Comma-separated ``topic.tag`` filter value(s) from the
+            records query, or empty.
+
+    Returns:
+        dict: A MongoDB ``$text`` query dict, or ``{}`` if there are no terms.
     """
     terms = []
     if searchphrase:
@@ -147,11 +178,31 @@ def _external_text_query(searchphrase, topic_tag) -> dict:
 
 
 class RecordCRUD(BaseCRUD):
+    """CRUD operations bound to the records collection (``settings.RECORDS_COLLECTION``)."""
+
     def __init__(self):
         super().__init__(settings.RECORDS_COLLECTION)
 
     def get(self, record_id: str) -> dict:
-        """Get a single record by @ID, EDIID, or ARK identifier"""
+        """Get a single record by @id, EDIID, or ARK identifier.
+
+        URL-decodes ``record_id`` and tries several matching strategies in a
+        single query: exact match on ``ediid`` or ``@id``, then (if the ID
+        does not already start with ``"ark:"``) a match with an ``"ark:"``
+        prefix prepended, and finally a suffix regex match against ``ediid``
+        and ``@id`` to tolerate partial/MDS-style identifiers.
+
+        Args:
+            record_id: A record identifier — full ARK ID, EDIID, ``@id``, or
+                MDS-style suffix. May be URL-encoded (e.g. ``ark%3A...``).
+
+        Returns:
+            dict: ``{"ResultCount": 1, "ResultData": [doc], "Metrics": {...}}``.
+
+        Raises:
+            ResourceNotFoundException: If no record matches any strategy.
+            InternalServerException: If the query fails for any other reason.
+        """
         start_time = time.time()
         print('Getting record with ID:', record_id)
         try:
@@ -212,6 +263,27 @@ class RecordCRUD(BaseCRUD):
         Search records and return paginated results plus pre-computed facet counts
         (topics, resourceTypes, components, authors, keywords) in a single MongoDB
         aggregation round-trip, eliminating the need for a separate filters request.
+
+        Args:
+            **kwargs: Raw search parameters as forwarded from the ``/records``
+                router, e.g. ``searchphrase``, ``skip``, ``limit``,
+                ``sort.asc``/``sort.desc``, ``include``/``exclude``, arbitrary
+                field filters, plus the facet-only controls ``products``
+                (comma-separated product types to include in resourceTypes)
+                and ``external`` (master on/off switch for external product
+                counts). ``products``/``external`` are popped before query
+                construction so they never become bogus field filters.
+
+        Returns:
+            dict: ``{"ResultCount": int, "ResultData": [...], "PageSize": int,
+            "Facets": {...}, "Metrics": {...}}``.
+
+        Raises:
+            KeyWordNotFoundException: If parameter processing determines no
+                results are possible (propagated from ``ProcessRequest``).
+            IllegalArgumentException: If the search parameters cannot be
+                translated into a valid MongoDB query.
+            InternalServerException: If the aggregation query fails.
         """
         start_time = time.time()
         # Product-selection controls are facet-composition inputs, not record

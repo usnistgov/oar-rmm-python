@@ -1,3 +1,10 @@
+"""Router for the ``/records/fields`` endpoints (the searchable-field catalog).
+
+Thin HTTP layer delegating to ``app.crud.field.field_crud``. The commented-out
+``search_fields`` implementation below is retained as a documented
+alternative that supports search parameters; the active handler simply
+returns every field with no pagination.
+"""
 from fastapi import APIRouter, Query, Body, Depends, Request
 from typing import List, Optional, Dict, Any
 from app.crud.field import field_crud

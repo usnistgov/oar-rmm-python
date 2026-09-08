@@ -1,3 +1,11 @@
+"""One-off/ops script that populates the ``code`` collection from the NIST code.gov catalog.
+
+Fetches the public code.json inventory from ``CODE_API_URL``, transforms each
+release entry into this API's document shape, and inserts it via
+``app.crud.code.code_crud``. Intended to be run manually or as part of a data
+refresh job (``python -m app.scripts.populate_code``), not imported by the
+running API server.
+"""
 import requests
 import logging
 from datetime import datetime
@@ -11,7 +19,14 @@ logger = logging.getLogger(__name__)
 CODE_API_URL = "https://code.nist.gov/explore/code.json"
 
 def fetch_code_data():
-    """Fetch code data from NIST API"""
+    """Fetch the raw code.json inventory from the NIST code.gov endpoint.
+
+    Returns:
+        dict: The parsed JSON response body.
+
+    Raises:
+        InternalServerException: If the HTTP request fails.
+    """
     try:
         response = requests.get(CODE_API_URL)
         response.raise_for_status()
@@ -21,7 +36,18 @@ def fetch_code_data():
         raise InternalServerException(f"Failed to fetch code data: {str(e)}")
 
 def transform_release(release):
-    """Transform a release into the desired document structure"""
+    """Convert one code.json "release" entry into this API's code-document shape.
+
+    Args:
+        release: A single release entry from the code.json ``releases`` list.
+
+    Returns:
+        dict: A document matching the ``code`` collection's schema, with
+        nested ``contact``, ``dates``, and ``permissions`` sub-objects.
+
+    Raises:
+        InternalServerException: If required nested fields cannot be read.
+    """
     try:
         return {
             "name": release.get("name", ""),
@@ -53,7 +79,20 @@ def transform_release(release):
         raise InternalServerException(f"Failed to transform release data: {str(e)}")
 
 def populate_code_collection():
-    """Populate code collection with data from NIST API"""
+    """Drop, re-index, and repopulate the ``code`` collection from the NIST catalog.
+
+    Fetches the current code.json inventory, transforms each named release
+    via :func:`transform_release`, and inserts each into MongoDB via
+    ``code_crud.create``. Individual release failures are logged and skipped
+    rather than aborting the whole run.
+
+    Returns:
+        bool: ``True`` on success.
+
+    Raises:
+        InternalServerException: If fetching data fails or the response is
+            not in the expected format.
+    """
     try:
         # Clear existing data
         db.code.drop()

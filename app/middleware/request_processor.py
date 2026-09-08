@@ -1,3 +1,25 @@
+"""Translates raw HTTP query parameters into MongoDB query documents.
+
+:class:`ProcessRequest` is the central query-building engine used by nearly
+every CRUD ``search`` method (via ``app.crud.base.BaseCRUD.search`` and
+directly by ``app.crud.record.RecordCRUD.search``). Given the flat dict of
+query-string parameters a router receives, it produces a MongoDB filter
+document plus projection/sort/pagination settings, handling:
+
+- Pagination via ``skip``/``limit`` or ``page``/``size``.
+- Free-text search via ``searchphrase`` ($text search).
+- Field sorting via ``sort.asc``/``sort.desc``.
+- Field projection via ``include``/``exclude``.
+- Date-range filtering via ``datefrom``/``dateto``.
+- Per-field filters, including comma-separated OR values, dot-notation nested
+  fields, and array-of-object fields (e.g. ``components.@type``) matched with
+  ``$elemMatch``.
+- Explicit AND/OR grouping of multiple field filters via ``logicalOp``.
+
+Each instance is stateful and single-use: call :meth:`reset_state` (done
+automatically at the start of :meth:`process_search_params`) before reusing an
+instance for a new request.
+"""
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import re
@@ -13,11 +35,24 @@ from app.middleware.exceptions import (
 logger = logging.getLogger(__name__)
 
 class ProcessRequest:
+    """Stateful builder that converts raw query parameters into a MongoDB query.
+
+    Instantiate once per request/search call; :meth:`process_search_params`
+    resets internal state at the start of each call, but a fresh instance is
+    still recommended per call site to avoid any cross-request state leakage.
+    """
+
     def __init__(self):
+        """Initialize a new processor with all state reset to defaults."""
         self.reset_state()
 
     def reset_state(self):
-        """Reset all instance variables to their default states"""
+        """Reset all instance variables to their default (pre-query) state.
+
+        Called both from ``__init__`` and at the start of
+        :meth:`process_search_params`, so a single ``ProcessRequest`` instance
+        can safely be reused across multiple queries.
+        """
         self.filter = None
         self.projections = None
         self.sort = None
@@ -42,7 +77,22 @@ class ProcessRequest:
             delattr(self, 'field_or_conditions')
 
     def validate_input(self, params: Dict[str, Any]) -> None:
-        """Validate request input parameters"""
+        """Validate raw request parameters before they are turned into a query.
+
+        Enforces: at most one ``searchphrase``, that ``searchphrase`` (if
+        present) is the first parameter and is not immediately followed by
+        ``logicalOp``, that ``logicalOp`` is one of ``AND``/``OR`` (case
+        insensitive), that ``skip``/``limit`` are integers, that
+        ``exclude``/``include``/``sort_desc``/``sort_asc`` contain only
+        ``[a-z0-9.,@_]`` characters, and rejects any parameter value
+        containing null bytes or path-traversal sequences (``../``).
+
+        Args:
+            params: Raw request query parameters.
+
+        Raises:
+            IllegalArgumentException: If any of the above rules are violated.
+        """
         # Validate searchphrase
         if "searchphrase" in params and isinstance(params["searchphrase"], list):
             raise IllegalArgumentException("Only one 'searchphrase' parameter allowed per request")
@@ -93,7 +143,35 @@ class ProcessRequest:
     
     
     def process_search_params(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Process and build MongoDB query from request parameters"""
+        """Build a complete MongoDB query specification from raw request parameters.
+
+        This is the main entry point of the class. It resets state, validates
+        the input (:meth:`validate_input`), determines whether field filters
+        should be combined with explicit AND/OR logic (when ``logicalOp`` is
+        given or more than one field filter is present) or processed
+        individually, then walks every parameter to populate pagination,
+        sorting, text search, date-range, and per-field filter state before
+        delegating to :meth:`_build_query` to assemble the final result.
+
+        Args:
+            params: Raw request query parameters (e.g. from
+                ``dict(request.query_params)``). Recognized control keys:
+                ``searchphrase``, ``exclude``, ``include``, ``skip``,
+                ``limit``, ``size``, ``page``, ``sort.desc``, ``sort.asc``,
+                ``datefrom``, ``dateto``, ``logicalOp``. Any other key is
+                treated as a field filter.
+
+        Returns:
+            Dict[str, Any]: ``{"query": dict, "projection": dict | None,
+            "sort": list | None, "skip": int, "limit": int | None,
+            "metrics": {"elapsed_time": float}}``.
+
+        Raises:
+            IllegalArgumentException: If ``validate_input`` rejects the
+                parameters, or a value cannot be converted as expected.
+            InternalServerException: If any other unexpected error occurs
+                while building the query.
+        """
         self.reset_state()
         start_time = time.time()
         search_input = False
@@ -201,7 +279,15 @@ class ProcessRequest:
             raise InternalServerException(f"Error processing request: {str(e)}")
 
     def _parse_sorting(self, sort_items: List[tuple]) -> None:
-        """Process sorting parameters"""
+        """Store parsed (field, direction) sort tuples on ``self.sort``.
+
+        Args:
+            sort_items: List of ``(field_name, pymongo.ASCENDING|DESCENDING)``
+                tuples, one per comma-separated field in ``sort.asc``/``sort.desc``.
+
+        Raises:
+            IllegalArgumentException: If assigning the sort items fails.
+        """
         try:
             self.sort = sort_items
         except Exception as e:
@@ -209,7 +295,14 @@ class ProcessRequest:
             raise IllegalArgumentException(f"Invalid sort parameters: {str(e)}")
 
     def _validate_projections(self) -> None:
-        """Validate and process field projections"""
+        """Build ``self.projections`` from ``self.include``/``self.exclude``.
+
+        Converts the comma-separated ``include``/``exclude`` strings into a
+        MongoDB projection dict (``{field: 1}`` for included fields,
+        ``{field: 0}`` for excluded fields). On any error, falls back to
+        ``self.projections = None`` (no projection) rather than raising, since
+        projection is a non-critical, best-effort feature.
+        """
         try:
             self.projections = {}
             
@@ -229,7 +322,32 @@ class ProcessRequest:
             self.projections = None
 
     def _update_map(self, key: str, value: str) -> None:
-        """Update advanced query map with validation"""
+        """Translate a single field=value query parameter into a MongoDB condition.
+
+        This is the core per-field filter dispatcher, handling several cases
+        in order: the reserved ``logicalOp`` key; the special-cased
+        ``topic.tag`` field (case-insensitive regex, OR'd across
+        comma-separated values); dot-notation array-of-object fields such as
+        ``components.@type``/``references.*``/``topic.*``/``authors.*``
+        (matched via ``$elemMatch``, appended to ``self.array_conditions``);
+        other dot-notation fields such as ``contactPoint.fn`` (built as a
+        nested dict on ``self.adv_map``, or as OR'd regex conditions on
+        ``self.field_or_conditions`` when comma-separated); and finally plain
+        top-level fields (OR'd regex conditions for comma-separated values,
+        otherwise a single regex condition merged into ``self.adv_map``).
+        ``@type`` values always use partial (substring) matching to tolerate
+        namespace prefixes like ``"nrdp:DataPublication"``; other fields use
+        exact (anchored) matching unless they are array/object sub-fields.
+
+        Args:
+            key: The parameter/field name, possibly dot-notated.
+            value: The raw string value for that field (may be comma-separated
+                for OR semantics).
+
+        Raises:
+            IllegalArgumentException: If ``value`` contains a null byte, or a
+                ``logicalOp`` value that isn't ``and``/``or``/``not``.
+        """
         # Security check
         if '\x00' in value:
             raise IllegalArgumentException(f"Invalid character in {key}: null bytes are not allowed")
@@ -397,7 +515,15 @@ class ProcessRequest:
         current[parts[-1]] = pattern
 
     def _process_advanced_filters(self) -> None:
-        """Process advanced query filters"""
+        """Merge all accumulated filter state into ``self.bson_objs``.
+
+        Combines ``self.array_conditions`` (from ``$elemMatch``-based array
+        field filters) and ``self.field_or_conditions`` (OR'd multi-value
+        field filters) with the conditions flattened out of ``self.adv_map``
+        (nested dot-notation single-value filters, converted to
+        dotted-path regex conditions, or passed through as-is when already a
+        MongoDB operator dict such as ``{"$in": [...]}``
+        """
         search_conditions = []
 
         # Add array conditions (these can be either AND or OR depending on the field)
@@ -437,7 +563,25 @@ class ProcessRequest:
         self.bson_objs = search_conditions 
 
     def _build_query(self, search_input: bool, start_time: float) -> Dict[str, Any]:
-        """Build final MongoDB query"""
+        """Assemble the final MongoDB query document and result envelope.
+
+        Combines (in order) the free-text ``$text`` filter, the
+        AND/OR-grouped ``logical_query`` (if any), the accumulated
+        ``bson_objs`` field conditions, and the ``datefrom``/``dateto`` range
+        filters into a single query, wrapping multiple conditions in
+        ``{"$and": [...]}`` when there is more than one.
+
+        Args:
+            search_input: Whether a ``searchphrase`` was supplied (currently
+                informational; not used to alter the returned structure).
+            start_time: ``time.time()`` value captured at the start of
+                :meth:`process_search_params`, used to compute elapsed time.
+
+        Returns:
+            Dict[str, Any]: ``{"query": dict, "projection": dict | None,
+            "sort": list | None, "skip": int, "limit": int | None,
+            "metrics": {"elapsed_time": float}}``.
+        """
         query = {}
         
         # Combine all conditions properly
@@ -482,7 +626,22 @@ class ProcessRequest:
 
     
     def _group_fields_by_logical_op(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Group fields by their associated logical operators"""
+        """Group non-control field parameters under a single AND/OR logical operator.
+
+        When no ``logicalOp`` is present, all field parameters are grouped
+        together under the default ``"AND"`` operator. When ``logicalOp`` is
+        present, all field parameters (whether they appear before or after
+        ``logicalOp`` in the parameter order) are grouped under the operator
+        it specifies (``.upper()``-ed).
+
+        Args:
+            params: Raw request query parameters.
+
+        Returns:
+            List[Dict[str, Any]]: A list containing at most one group dict of
+            the form ``{"fields": {name: value, ...}, "logicalOp": "AND"|"OR"}``,
+            or an empty list if there are no field parameters.
+        """
         field_groups = []
         current_group = {"fields": {}, "logicalOp": "AND"}  # Default to AND
         
@@ -539,7 +698,23 @@ class ProcessRequest:
 
     
     def _build_logical_query(self, field_groups: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Build MongoDB query with proper logical operations"""
+        """Build a MongoDB query combining field filters with explicit AND/OR logic.
+
+        Each field's value becomes a case-insensitive partial-match regex
+        condition (comma-separated values become an ``$or`` of regex
+        conditions for that field); the resulting per-field conditions within
+        a group are then combined with ``$and``/``$or`` per the group's
+        ``logicalOp``. Multiple groups (only produced when
+        :meth:`_group_fields_by_logical_op` is extended to emit more than one)
+        are combined with ``$and``.
+
+        Args:
+            field_groups: Groups as produced by :meth:`_group_fields_by_logical_op`.
+
+        Returns:
+            Dict[str, Any]: A MongoDB query dict, or ``{}`` if there are no
+            field groups.
+        """
         if not field_groups:
             return {}
         

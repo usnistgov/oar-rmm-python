@@ -1,3 +1,8 @@
+"""CRUD operations for the "versions" resource collection.
+
+Tracks individual versioned releases of a resource (as opposed to the
+grouping provided by ``app.crud.releaseset``), served at ``/versions``.
+"""
 from app.config import settings
 from app.crud.base import BaseCRUD
 

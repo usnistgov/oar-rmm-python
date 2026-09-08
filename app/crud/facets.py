@@ -126,6 +126,7 @@ def _data_facets(searchphrase: str, extra_filters: dict | None = None) -> dict:
 
 
 def _records_collection() -> str:
+    """Return the configured records-collection name (imported lazily to avoid import-time coupling)."""
     from app.config import settings
     return settings.RECORDS_COLLECTION
 

@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""Blocks until the configured MongoDB instance(s) are reachable and authenticated.
+
+Used by the Docker entrypoint (see docker/entrypoint.sh) to delay application
+startup until MongoDB is ready, avoiding connection-refused crashes when the
+database container takes longer to start than the API container. Checks both
+the main database and (if configured separately) the metrics database.
+Exits with status 0 on success; the caller is expected to treat a non-zero
+exit / ``False`` return as a fatal startup condition.
+"""
 import time
 import logging
 import sys
@@ -16,7 +25,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def wait_for_mongodb():
-    """Wait for MongoDB to become available with proper authentication"""
+    """Wait for the main (and, if separately configured, metrics) MongoDB to become available.
+
+    Returns:
+        bool: ``True`` if all configured databases became reachable within
+        the retry budget, ``False`` if either one did not.
+    """
     max_attempts = 30
     delay_seconds = 2
     
@@ -37,7 +51,23 @@ def wait_for_mongodb():
     return True
 
 def test_connection(mongo_uri, db_name, max_attempts, delay_seconds):
-    """Test connection to a specific MongoDB instance"""
+    """Poll a single MongoDB instance until it accepts authenticated connections.
+
+    First checks that the server responds to an unauthenticated ``ping`` (to
+    distinguish "server not up yet" from "authentication failing"), then
+    verifies authenticated access by pinging and listing collections on the
+    target database. Retries with a fixed delay between attempts.
+
+    Args:
+        mongo_uri: Full MongoDB connection URI (may include credentials).
+        db_name: Name of the database to verify access to.
+        max_attempts: Maximum number of connection attempts before giving up.
+        delay_seconds: Delay between attempts, in seconds.
+
+    Returns:
+        bool: ``True`` if a connection and database access succeeded within
+        ``max_attempts``, ``False`` otherwise.
+    """
     for attempt in range(max_attempts):
         try:
             # Try connection without auth first to see if server is up

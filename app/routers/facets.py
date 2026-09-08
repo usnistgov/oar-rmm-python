@@ -1,3 +1,10 @@
+"""Router for the standalone ``/facets`` endpoint (full-corpus facet aggregation).
+
+Unlike the other routers, this does not wrap a CRUD class — it calls
+``app.crud.facets.get_merged_facets`` directly, since facet computation here
+spans multiple collections (records plus the code/papers/patents corpora)
+rather than a single resource collection.
+"""
 from fastapi import APIRouter, Query, Request
 from typing import Optional
 from app.crud.facets import get_merged_facets

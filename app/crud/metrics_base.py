@@ -1,3 +1,10 @@
+"""Shared query-processing helpers for the usage-metrics CRUD layer.
+
+:class:`MetricsBaseCRUD` factors out the common "take raw query params, run
+them through :class:`~app.middleware.request_processor.ProcessRequest`, query
+a metrics collection, sanitize ObjectIds, wrap in a result envelope" logic
+used by several methods in :class:`~app.crud.metrics.MetricsCRUD`.
+"""
 from typing import Dict, Any, Optional, List
 import time
 from datetime import datetime
@@ -11,6 +18,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 class MetricsBaseCRUD:
+    """Reusable query/pagination/sorting logic shared across metrics collections."""
+
     def __init__(self):
         """Initialize metrics base functionality"""
         self.request_processor = ProcessRequest()
