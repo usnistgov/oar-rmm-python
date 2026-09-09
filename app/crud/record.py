@@ -70,8 +70,10 @@ def _strip_type_filter(query: dict) -> dict:
             return kept[0]
         return {"$and": kept}
 
-    # Top-level direct @type condition
-    if "@type" in query and len(query) == 1:
+    # Top-level condition that is purely about @type: either a direct
+    # {"@type": ...} filter or an $or of @type conditions (e.g. produced by
+    # @type=DataPublication,SRD). Both must be dropped for exclude-self.
+    if _is_type_condition(query):
         return {}
 
     return query
@@ -144,16 +146,18 @@ def _parse_product_selection(products, external) -> set:
     return selected
 
 
-def _external_text_query(searchphrase, topic_tag) -> dict:
+def _external_query(searchphrase, topic_tag) -> dict:
     """
-    Build a $text query that scopes the external product collections to the same
-    free-text intent as the records query (searchphrase + selected topic label).
+    Build the query that scopes the external product collections
+    (code/papers/patents) for the resourceTypes facet.
 
-    The external collections have wildcard text indexes but no topic.tag/@type
-    fields, so the searchphrase and topic label(s) are folded into a single
-    $text search — the same text-search mechanism their own /papers, /code and
-    /patents endpoints use. Returns {} when there is no searchphrase and no
-    topic (an unfiltered browse), for which the full-corpus total is correct.
+    Only the free-text ``searchphrase`` is applied, as a ``$text`` search — the
+    same mechanism the external collections' own /papers, /code and /patents
+    endpoints use. A ``topic.tag`` filter is applied as an honest field
+    predicate: the external corpora have no ``topic.tag`` field, so any topic
+    filter yields zero matches (the bucket is correctly omitted) instead of
+    leaking the topic *value* into the free-text search. Returns ``{}`` for an
+    unfiltered browse, for which the full-corpus total is correct.
 
     Args:
         searchphrase: Free-text search term from the records query, or empty.
@@ -161,20 +165,42 @@ def _external_text_query(searchphrase, topic_tag) -> dict:
             records query, or empty.
 
     Returns:
-        dict: A MongoDB ``$text`` query dict, or ``{}`` if there are no terms.
+        dict: A MongoDB query dict, or ``{}`` if there are no active filters.
     """
-    terms = []
+    conditions: list = []
     if searchphrase:
         term = str(searchphrase).strip()
         if term:
-            terms.append(term)
-    for tag in str(topic_tag or "").split(","):
-        tag = tag.strip()
-        if tag:
-            terms.append(tag)
-    if not terms:
+            conditions.append({"$text": {"$search": term}})
+    tags = [tag.strip() for tag in str(topic_tag or "").split(",") if tag.strip()]
+    if tags:
+        # External docs carry no topic.tag, so this predicate matches nothing.
+        conditions.append({"topic.tag": {"$in": tags}})
+    if not conditions:
         return {}
-    return {"$text": {"$search": " ".join(terms)}}
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"$and": conditions}
+
+
+def _dedup_by_ediid_stages() -> list:
+    """
+    Aggregation stages that collapse documents sharing the same ``ediid`` into a
+    single representative document.
+
+    ``ediid`` is a unique dataset identifier, but the index can hold
+    byte-identical duplicates (an ingest artifact). Collapsing them keeps
+    ResultCount, the result page, and every facet count based on *distinct
+    records* rather than on duplicated index entries. Records without an
+    ``ediid`` fall back to their unique ``_id`` so they are never merged.
+
+    Returns:
+        list: ``$group`` + ``$replaceRoot`` stages to insert after ``$match``.
+    """
+    return [
+        {"$group": {"_id": {"$ifNull": ["$ediid", "$_id"]}, "_doc": {"$first": "$$ROOT"}}},
+        {"$replaceRoot": {"newRoot": "$_doc"}},
+    ]
 
 
 class RecordCRUD(BaseCRUD):
@@ -309,8 +335,15 @@ class RecordCRUD(BaseCRUD):
             limit = processed.get("limit") or 0
             sort_spec = processed.get("sort") or []
 
-            # Sub-pipeline that returns the requested page of documents
-            data_pipeline: list = []
+            # The data page runs as its OWN aggregation (a streamed cursor).
+            # Keeping it out of $facet is essential: $facet buffers every matched
+            # document into a single result doc, which exceeds MongoDB's 16MB
+            # BSONObj limit on broad queries (e.g. @type=DataPublication) and 500s
+            # the request.
+            data_pipeline: list = [
+                {"$match": query},
+                *_dedup_by_ediid_stages(),
+            ]
             if sort_spec:
                 data_pipeline.append({"$sort": {f: d for f, d in sort_spec}})
             if skip:
@@ -321,13 +354,16 @@ class RecordCRUD(BaseCRUD):
 
             pipeline = [
                 {"$match": query},
+                # Collapse duplicate ediids so every facet count reflects
+                # distinct records, not duplicated index entries.
+                *_dedup_by_ediid_stages(),
                 {"$facet": {
-                    # Paginated result set
-                    "data": data_pipeline,
                     # Total matched count (unpaginated)
                     "total": [{"$count": "count"}],
-                    # Research topics — level-1 only (part before first ':'),
-                    # deduplicated and counts aggregated across all sub-topics.
+                    # Research topics — level-1 only (part before first ':').
+                    # Counts DISTINCT records per top-level topic, so multiple
+                    # leaf tags on one record (e.g. two "Physics:*" sub-topics)
+                    # contribute a single count, not one per leaf.
                     "topics": [
                         {"$unwind": {"path": "$topic", "preserveNullAndEmptyArrays": False}},
                         {"$addFields": {
@@ -335,18 +371,22 @@ class RecordCRUD(BaseCRUD):
                                 "$arrayElemAt": [{"$split": ["$topic.tag", ":"]}, 0]
                             }
                         }},
-                        {"$match": {"_level1Tag": {"$ne": None, "$ne": ""}}},
-                        {"$group": {"_id": "$_level1Tag", "count": {"$sum": 1}}},
+                        {"$match": {"_level1Tag": {"$nin": [None, ""]}}},
+                        {"$group": {"_id": {"tag": "$_level1Tag", "record": "$_id"}}},
+                        {"$group": {"_id": "$_id.tag", "count": {"$sum": 1}}},
                         {"$sort": {"count": -1}},
                     ],
                     # Record @type values — computed separately via exclude-self
                     # aggregation below; this key is intentionally absent from $facet.
-                    # Component types (components[].@type, nrdp-prefixed only)
+                    # Component types (components[].@type, nrdp-prefixed only).
+                    # Counts DISTINCT records per component type, so a record with
+                    # multiple components of the same type counts once.
                     "components": [
                         {"$unwind": {"path": "$components", "preserveNullAndEmptyArrays": False}},
                         {"$unwind": {"path": "$components.@type", "preserveNullAndEmptyArrays": False}},
                         {"$match": {"components.@type": {"$regex": "nrdp", "$options": "i"}}},
-                        {"$group": {"_id": "$components.@type", "count": {"$sum": 1}}},
+                        {"$group": {"_id": {"type": "$components.@type", "record": "$_id"}}},
+                        {"$group": {"_id": "$_id.type", "count": {"$sum": 1}}},
                         {"$sort": {"count": -1}},
                     ],
                     # Authors / contributors (contactPoint.fn)
@@ -377,6 +417,7 @@ class RecordCRUD(BaseCRUD):
 
             logger.info(f"Record search query: {query}")
             result = list(self.collection.aggregate(pipeline, **agg_kwargs))
+            docs = list(self.collection.aggregate(data_pipeline, **agg_kwargs))
 
             # --- Exclude-self resourceTypes aggregation ---
             # Strip @type from the query so selecting one type doesn't collapse
@@ -384,6 +425,8 @@ class RecordCRUD(BaseCRUD):
             query_without_type = _strip_type_filter(query)
             rt_pipeline = [
                 {"$match": query_without_type} if query_without_type else {"$match": {}},
+                # Collapse duplicate ediids so each distinct record counts once.
+                *_dedup_by_ediid_stages(),
                 {"$unwind": {"path": "$@type", "preserveNullAndEmptyArrays": False}},
                 {"$group": {"_id": "$@type", "count": {"$sum": 1}}},
                 {"$sort": {"count": -1}},
@@ -407,7 +450,6 @@ class RecordCRUD(BaseCRUD):
                 }
 
             bucket = result[0]
-            docs = bucket.get("data", [])
             total_list = bucket.get("total", [])
             total = total_list[0]["count"] if total_list else 0
 
@@ -432,14 +474,16 @@ class RecordCRUD(BaseCRUD):
             }
 
             # --- External product-type counts (code / papers / patents) ---
-            # Scope each external corpus to the SAME free-text intent as the
-            # records query (searchphrase + selected topic) instead of returning
-            # static global corpus totals, and only include the product types the
-            # caller actually selected. Deselecting a product type therefore drops
-            # its bucket to the count within the current result set (0 / removed).
+            # Scope each external corpus to the records query's free-text intent
+            # (searchphrase only) instead of returning static global corpus
+            # totals, and only include the product types the caller actually
+            # selected. A topic.tag filter is applied as an honest field
+            # predicate the external corpora cannot satisfy, so a topic filter
+            # yields 0 (bucket omitted) rather than leaking the topic value into
+            # the external free-text search.
             selected_products = _parse_product_selection(products_param, external_param)
             if selected_products:
-                ext_query = _external_text_query(
+                ext_query = _external_query(
                     kwargs.get("searchphrase", ""),
                     kwargs.get("topic.tag", ""),
                 )
