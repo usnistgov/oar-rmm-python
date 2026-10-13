@@ -60,12 +60,19 @@ class PaperCRUD(BaseCRUD):
     def search(self, **kwargs) -> dict:
         """Search papers with various criteria.
 
+        Papers catalog their research topics in the ``theme`` field rather
+        than the records-style ``topic.tag``, so a ``topic.tag`` filter (as
+        emitted by the SDP Research Topics facet) is translated to a ``theme``
+        filter before querying.
+
         Args:
             **kwargs: Search parameters forwarded to :meth:`BaseCRUD.search`.
 
         Returns:
             dict: The result envelope from :meth:`BaseCRUD.search`.
         """
+        if "topic.tag" in kwargs and "theme" not in kwargs:
+            kwargs["theme"] = kwargs.pop("topic.tag")
         return super().search(**kwargs)
 
 

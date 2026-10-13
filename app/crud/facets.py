@@ -28,6 +28,19 @@ _EXTERNAL_COLLECTIONS: list[tuple[str, str]] = [
     ("patents", "Patent"),
 ]
 
+# ---------------------------------------------------------------------------
+# Facet field mappings for external corpora: facet bucket → source field and
+# optional separator for multi-value strings (e.g. papers' comma-joined
+# ``theme`` and semicolon-joined ``keyword`` entries).
+# ---------------------------------------------------------------------------
+_EXTERNAL_FACET_FIELDS: dict[str, dict[str, dict]] = {
+    "papers": {
+        "topics":   {"field": "theme",           "split": ","},
+        "keywords": {"field": "keyword",         "split": ";"},
+        "authors":  {"field": "contactPoint.fn"},
+    },
+}
+
 
 def _build_text_query(searchphrase: str) -> dict:
     """Return a MongoDB $text match or {} for an optional searchphrase."""
@@ -125,6 +138,68 @@ def _data_facets(searchphrase: str, extra_filters: dict | None = None) -> dict:
     }
 
 
+def _multi_value_facet_pipeline(match: dict, field: str, split: str | None = None) -> list:
+    """
+    Build an aggregation pipeline that counts distinct documents per value of
+    ``field``. Handles array fields (unwound), plain string fields, and joined
+    strings (split on ``split`` and trimmed) in one shape.
+    """
+    pipeline: list = [{"$match": match} if match else {"$match": {}}]
+    pipeline.append({"$unwind": {"path": f"${field}", "preserveNullAndEmptyArrays": False}})
+    # Guard against non-string values so $split/$trim cannot abort the pipeline
+    pipeline.append({"$match": {field: {"$type": "string"}}})
+    if split:
+        pipeline.append({"$addFields": {"_vals": {"$split": [f"${field}", split]}}})
+        pipeline.append({"$unwind": "$_vals"})
+        pipeline.append({"$addFields": {"_val": {"$trim": {"input": "$_vals"}}}})
+    else:
+        pipeline.append({"$addFields": {"_val": {"$trim": {"input": f"${field}"}}}})
+    pipeline.append({"$match": {"_val": {"$nin": [None, ""]}}})
+    # Count distinct documents per value (a doc repeating a value counts once)
+    pipeline.append({"$group": {"_id": {"val": "$_val", "doc": "$_id"}}})
+    pipeline.append({"$group": {"_id": "$_id.val", "count": {"$sum": 1}}})
+    pipeline.append({"$sort": {"count": -1}})
+    return pipeline
+
+
+def _external_facets(col_name: str, base_query: dict) -> dict[str, list]:
+    """
+    Aggregate topics/keywords/authors facets for one external collection using
+    its ``_EXTERNAL_FACET_FIELDS`` mapping. Collections without a mapping (or
+    whose documents lack the mapped fields) simply yield empty buckets.
+    """
+    mapping = _EXTERNAL_FACET_FIELDS.get(col_name, {})
+    out_key = {"topics": "tag", "keywords": "keyword", "authors": "name"}
+    results: dict[str, list] = {}
+    for bucket, spec in mapping.items():
+        try:
+            agg = db[col_name].aggregate(
+                _multi_value_facet_pipeline(base_query, spec["field"], spec.get("split"))
+            )
+            results[bucket] = [
+                {out_key[bucket]: item["_id"], "count": item["count"]}
+                for item in agg if item.get("_id")
+            ]
+        except Exception as exc:
+            logger.warning("Facet aggregation of %s.%s failed: %s", col_name, spec["field"], exc)
+    return results
+
+
+def _merge_facet_bucket(target: list[dict], additions: list[dict], key: str) -> None:
+    """Merge ``additions`` into ``target`` in place, summing counts on duplicate keys."""
+    index = {item[key]: item for item in target if key in item}
+    for item in additions:
+        value = item.get(key)
+        if value is None:
+            continue
+        existing = index.get(value)
+        if existing is not None:
+            existing["count"] = existing.get("count", 0) + item.get("count", 0)
+        else:
+            target.append(item)
+            index[value] = item
+
+
 def _records_collection() -> str:
     """Return the configured records-collection name (imported lazily to avoid import-time coupling)."""
     from app.config import settings
@@ -181,7 +256,10 @@ def get_merged_facets(
         except Exception as exc:
             logger.warning("Data facet aggregation failed: %s", exc)
 
-    # --- External collection counts (appended to resourceTypes) ---
+    # --- External collection facets ---
+    # Each external corpus contributes its resourceTypes count plus whatever
+    # topics/keywords/authors its field mapping yields (e.g. papers' theme,
+    # keyword, and contactPoint.fn), merged with the data facets.
     ext_query = _build_text_query(searchphrase)
     for col_name, label in active_external:
         try:
@@ -190,5 +268,17 @@ def get_merged_facets(
                 merged["resourceTypes"].append({"type": label, "count": count})
         except Exception as exc:
             logger.warning("Could not count %s collection: %s", col_name, exc)
+            continue
+
+        ext_facets = _external_facets(col_name, ext_query)
+        _merge_facet_bucket(merged["topics"],   ext_facets.get("topics", []),   "tag")
+        _merge_facet_bucket(merged["keywords"], ext_facets.get("keywords", []), "keyword")
+        _merge_facet_bucket(merged["authors"],  ext_facets.get("authors", []),  "name")
+
+    # Keep merged buckets in the order the frontend expects (count-desc for
+    # topics/keywords, alphabetical for authors)
+    merged["topics"].sort(key=lambda item: item.get("count", 0), reverse=True)
+    merged["keywords"].sort(key=lambda item: item.get("count", 0), reverse=True)
+    merged["authors"].sort(key=lambda item: (item.get("name") or "").lower())
 
     return merged

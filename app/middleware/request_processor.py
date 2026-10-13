@@ -326,8 +326,8 @@ class ProcessRequest:
 
         This is the core per-field filter dispatcher, handling several cases
         in order: the reserved ``logicalOp`` key; the special-cased
-        ``topic.tag`` field (case-insensitive regex, OR'd across
-        comma-separated values); dot-notation array-of-object fields such as
+        ``topic.tag``/``theme`` research-topic fields (case-insensitive
+        partial-match regex, OR'd across comma-separated values); dot-notation array-of-object fields such as
         ``components.@type``/``references.*``/``topic.*``/``authors.*``
         (matched via ``$elemMatch``, appended to ``self.array_conditions``);
         other dot-notation fields such as ``contactPoint.fn`` (built as a
@@ -359,25 +359,28 @@ class ProcessRequest:
             self.logical_ops.append(value.lower())
             return
         
-        # Special handling for topic.tag
-        if key == 'topic.tag':
+        # Special handling for topic.tag and theme (research-topic fields).
+        # Both need partial (unanchored) matching: topic.tag values are
+        # hierarchical ("Physics: Optical physics") and theme values may be
+        # several topics joined in one string ("Materials, Concrete / cement").
+        if key in ('topic.tag', 'theme'):
             import re
             values = [v.strip() for v in value.split(',') if v.strip()] if ',' in value else [value.strip()]
             
-            # Create case-insensitive regex patterns for topic.tag field only
+            # Create case-insensitive regex patterns for this field only
             if len(values) == 1:
-                condition = {"topic.tag": {"$regex": f"{re.escape(values[0])}", "$options": "i"}}
+                condition = {key: {"$regex": f"{re.escape(values[0])}", "$options": "i"}}
             else:
                 or_conditions = []
                 for val in values:
-                    or_conditions.append({"topic.tag": {"$regex": f"{re.escape(val)}", "$options": "i"}})
+                    or_conditions.append({key: {"$regex": f"{re.escape(val)}", "$options": "i"}})
                 condition = {"$or": or_conditions}
             
             if not hasattr(self, 'field_or_conditions'):
                 self.field_or_conditions = []
             
             self.field_or_conditions.append(condition)
-            logger.info(f"Created topic.tag match condition: {condition}")
+            logger.info(f"Created {key} match condition: {condition}")
             return
         
         # Handle array fields with dot notation (like components.@type) 
